@@ -21,6 +21,8 @@ The chat's Notion plugin connection is independent of the GitHub runner and is n
 
 ## Update behavior
 
+- The collection is displayed by experienced date, newest first. Entries with no experienced date follow dated entries; release dates and creation dates do not substitute for experienced dates. This sorting also applies after searching or filtering.
+
 - Only the two fixed data sources listed in `scripts/sync_notion.py` are read. New rows in either collection will be published publicly as part of this site.
 - Titles, original titles, ratings, notes, supported page blocks, critic scores, external links, and covers are refreshed. Removed rows disappear from the next successful snapshot.
 - Expiring Notion image URLs and credentials are not published; covers are downloaded as local files.
