@@ -1,13 +1,46 @@
 'use strict';
-const entries=ARCHIVE.entries.map(e=>({...e,pageTitle:e.title,title:e.category==='映画'?(e.originalTitle?.trim()||e.title):e.title})).sort((a,b)=>(b.experiencedDate||b.releaseDate||'').slice(0,10).localeCompare((a.experiencedDate||a.releaseDate||'').slice(0,10))),grid=document.querySelector('#collection-grid'),search=document.querySelector('#search'),filters=document.querySelector('.filters'),detailDialog=document.querySelector('#detail-dialog'),aboutDialog=document.querySelector('#about-dialog');
-let activeFilter='all',displayLimit=12;
+const collectionDate=e=>Object.prototype.hasOwnProperty.call(e,'sortDate')?(e.sortDate||''):(e.experiencedDate||e.releaseDate||'');
+const entries=ARCHIVE.entries.map(e=>({...e,pageTitle:e.title,title:e.category==='映画'?(e.originalTitle?.trim()||e.title):e.title})).sort((a,b)=>collectionDate(b).slice(0,10).localeCompare(collectionDate(a).slice(0,10))),grid=document.querySelector('#collection-grid'),search=document.querySelector('#search'),filters=document.querySelector('.filters'),detailDialog=document.querySelector('#detail-dialog'),aboutDialog=document.querySelector('#about-dialog');
+const activeFilters=new Set();
+const activeRatings=new Set();
+let displayLimit=12;
+// Legacy is an explicit Notion checkbox, independent of all dates.
+function isLegacy(e){
+ return e.legacy===true;
+}
+function matchesCollectionFilter(e,selected=activeFilters){
+ const legacy=selected.has('legacy'),categories=[...selected].filter(c=>c!=='legacy');
+ if(!categories.length)return legacy?isLegacy(e):!isLegacy(e);
+ return categories.includes(e.category)&&(legacy||!isLegacy(e));
+}
+function matchesRating(e,selected=activeRatings){
+ if(!selected.size)return true;
+ if(selected.has('goat')&&e.hallOfFame)return true;
+ return typeof e.rating==='number'&&selected.has(`score-${e.rating}`);
+}
+function updateRatingButtons(){
+ const panel=document.querySelector('#rating-filters');if(!panel)return;
+ panel.querySelectorAll('[data-rating]').forEach(b=>{
+  const selected=activeRatings.has(b.dataset.rating);b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));
+ });
+}
+function initRatingFilters(){
+ const panel=document.querySelector('#rating-filters');if(!panel)return;
+ panel.querySelector('[data-rating-group="score"] .rating-options').innerHTML=Array.from({length:11},(_,i)=>10-i).map(n=>`<button class="rating-filter" data-rating="score-${n}" aria-pressed="false" aria-label="${n} out of 10">${n}</button>`).join('');
+ panel.addEventListener('click',event=>{
+  const button=event.target.closest('[data-rating]');if(!button)return;
+  const value=button.dataset.rating;if(activeRatings.has(value))activeRatings.delete(value);else activeRatings.add(value);
+  displayLimit=12;updateRatingButtons();render();
+ });
+ updateRatingButtons();
+}
 let autoMoreObserver=null,autoMoreFrame=0;
 const escapeHTML=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isJapanese=v=>/[\u3040-\u30ff\u3400-\u9fff]/.test(v);
 const pad=v=>String(v).padStart(2,'0');
 const formatDate=v=>v?v.slice(0,10).replaceAll('-','.'):'UNDATED';
 const categoryNames={'all':'All objects','映画':'Cinema','音楽':'Music','アート':'Art','舞台・ライブ':'Live','建築':'Architecture','ゲーム':'Games','本':'Books','その他':'Other'};
-const ratingText=e=>e.ratingLabel.replace('殿堂入り','★★★★★').replace('未評価','Unrated').replace('未記録','Unrated');
+const ratingText=e=>typeof e.rating==='number'?`${e.rating} / 10`:'Unrated';
 const safeURL=v=>{try{const u=new URL(v);return ['https:','http:'].includes(u.protocol)?u.href:'';}catch{return '';}};
 // The object edition uses short panel transitions; other editions keep native dialogs.
 const floatingEdition=document.documentElement.dataset.edition==='floating';
@@ -80,24 +113,34 @@ function renderMarkdown(markdown){
  flush();closeList();return html;
 }
 function initFilters(){
- const order=['all','映画','音楽','アート','舞台・ライブ','建築','ゲーム','本','その他'];
- filters.innerHTML=order.filter(c=>c==='all'||entries.some(e=>e.category===c)).map(c=>`<button class="filter${c==='all'?' active':''}" data-filter="${escapeHTML(c)}" aria-pressed="${c==='all'}">${categoryNames[c]} <sup>${pad(c==='all'?entries.length:entries.filter(e=>e.category===c).length)}</sup></button>`).join('');
+ const order=['all','映画','音楽','アート','舞台・ライブ','建築','ゲーム','本','その他','legacy'];
+ filters.innerHTML=order.filter(c=>c==='all'||c==='legacy'||entries.some(e=>e.category===c)).map(c=>`<button class="filter" data-filter="${escapeHTML(c)}" aria-pressed="false">${c==='legacy'?'Legacy':categoryNames[c]} <sup></sup></button>`).join('');
+ updateFilterButtons();
+}
+function updateFilterButtons(){
+ const categories=[...activeFilters].filter(c=>c!=='legacy'),includeLegacy=activeFilters.has('legacy');
+ filters.querySelectorAll('[data-filter]').forEach(button=>{
+  const key=button.dataset.filter,selected=key==='all'?activeFilters.size===0:activeFilters.has(key);
+  button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));
+  const count=entries.filter(e=>key==='all'?!isLegacy(e):key==='legacy'?isLegacy(e)&&(!categories.length||categories.includes(e.category)):e.category===key&&(includeLegacy||!isLegacy(e))).length;
+  button.querySelector('sup').textContent=pad(count);
+ });
 }
 function cardMarkup(e){
- const date=e.source==='music'?e.releaseDate:e.experiencedDate;
+ const date=collectionDate(e);
  if(document.documentElement.dataset.edition==='floating')return `<article class="object-card"><button class="object-open" data-entry="${e.id}" aria-label="Read the note: ${escapeHTML(e.title)}"><span class="object-index">${pad(entries.indexOf(e)+1)}</span>${coverMarkup(e)}<span class="object-caption"><span class="object-title"${isJapanese(e.title)?' lang="ja"':''}>${escapeHTML(e.title)}</span><span class="object-label">${e.label}</span><span class="object-rating">${escapeHTML(ratingText(e))}</span></span><span class="hover-label" aria-hidden="true">Open ↗</span></button></article>`;
  return `<article class="object-card"><button class="object-open" data-entry="${e.id}" aria-label="Read the note: ${escapeHTML(e.title)}">${coverMarkup(e)}<div class="card-content"><div class="object-meta"><span>${e.label}</span><span>${date?`${e.source==='music'?'RELEASED':'EXPERIENCED'} ${formatDate(date)}`:'UNDATED'}</span></div><h3 class="object-title${isJapanese(e.title)?' jp':''}"${isJapanese(e.title)?' lang="ja"':''}>${escapeHTML(e.title)}</h3><p class="object-creator">${escapeHTML(e.creator||'Creator unrecorded')}</p><p class="card-excerpt${e.note?'':' is-empty'}"${isJapanese(e.note)?' lang="ja"':''}>${escapeHTML(e.note||'No note.')}</p><div class="object-bottom"><span class="card-rating${e.hallOfFame?' is-favorite':''}">${e.hallOfFame?'◇ ':''}${escapeHTML(ratingText(e))}${e.hallOfFame&&e.source==='music'?' · GOAT':''}</span><span class="card-read">Read note <span class="card-arrow" aria-hidden="true">↗</span></span></div></div></button></article>`;
 }
 function render(append=false,focusAdded=false){
  if(!append)document.querySelector('#load-status').textContent='';
  const q=search.value.trim().normalize('NFKC').toLocaleLowerCase('ja');
- let visible=entries.filter(e=>(activeFilter==='all'||e.category===activeFilter)&&[e.title,e.pageTitle,e.originalTitle,e.creator,e.category,e.label,e.note,...e.tags].join(' ').normalize('NFKC').toLocaleLowerCase('ja').includes(q));
+ let visible=entries.filter(e=>matchesCollectionFilter(e)&&matchesRating(e)&&[e.title,e.pageTitle,e.originalTitle,e.creator,e.category,e.label,e.note,...e.tags].join(' ').normalize('NFKC').toLocaleLowerCase('ja').includes(q));
  const shown=visible.slice(0,displayLimit);
  const previousCount=append?grid.children.length:0;
  // Keep existing DOM, image state, reveal state and scroll position when extending.
  if(append)grid.insertAdjacentHTML('beforeend',shown.slice(previousCount).map(cardMarkup).join(''));
  else grid.innerHTML=shown.map(cardMarkup).join('');
- document.querySelector('#result-count').textContent=`${pad(visible.length)} OBJECTS${q||activeFilter!=='all'?' / FILTERED':''}`;
+ document.querySelector('#result-count').textContent=`${pad(visible.length)} OBJECTS${q||activeFilters.size||activeRatings.size?' / FILTERED':''}`;
  document.querySelector('#empty-state').hidden=visible.length>0;
  const more=document.querySelector('#load-more');more.hidden=shown.length>=visible.length;more.innerHTML=`Load more <span class="remaining-count">${visible.length-shown.length} remaining</span><span aria-hidden="true">↓</span>`;
  document.querySelector('#shown-count').textContent=visible.length?`${shown.length} / ${visible.length} RECORDS`:'';
@@ -161,7 +204,7 @@ function detailSources(e){
 }
 function showEntry(id){
  const e=entries.find(item=>item.id===id);if(!e)return;
- const facts=[['PERSONAL RATING',e.ratingLabel],[e.source==='music'?'RELEASED ON':'EXPERIENCED ON',formatDate(e.source==='music'?e.releaseDate:e.experiencedDate)]];
+ const facts=[['PERSONAL RATING',ratingText(e)],[e.dateLabel||(e.source==='music'?'RELEASED ON':'EXPERIENCED ON'),formatDate(collectionDate(e))]];
  if(e.format)facts.push(['FORMAT',e.format]);
  const {links,body,reviewFacts}=detailSources(e);
  const checkedOn=reviewFacts.filter(([k])=>k==='SCORES CHECKED ON').map(([,v])=>v);
@@ -176,7 +219,14 @@ function renderFavorites(){
  document.querySelector('.favorite-grid').innerHTML=favorites.map((e,i)=>`<button class="favorite" data-entry="${e.id}" aria-label="Hall of fame: ${escapeHTML(e.title)}"><span class="favorite-number">${['I.','II.','III.','IV.'][i]||i+1}</span><div class="round-art ${e.cover?'':'round-fallback'}">${e.cover?`<img src="${escapeHTML(e.cover)}" alt="${escapeHTML(e.title)} — cover artwork" loading="lazy">`:`<span>${escapeHTML(e.originalTitle||e.title)}</span>`}</div><span class="favorite-kind">${e.label} / ${e.source==='music'?'GOAT':'ALL-TIME BEST'}</span><h3 class="${isJapanese(e.title)?'jp':''}">${escapeHTML(e.title)}</h3><span class="favorite-link">${escapeHTML(ratingText(e))} <span aria-hidden="true">↗</span></span></button>`).join('');
  document.querySelector('#favorites-count').textContent=`${pad(favorites.length)} PERSONAL FAVORITES`;
 }
-filters.addEventListener('click',event=>{const b=event.target.closest('[data-filter]');if(!b)return;activeFilter=b.dataset.filter;displayLimit=12;filters.querySelectorAll('[data-filter]').forEach(item=>{const selected=item===b;item.classList.toggle('active',selected);item.setAttribute('aria-pressed',String(selected));});render();});
+filters.addEventListener('click',event=>{
+ const b=event.target.closest('[data-filter]');if(!b)return;
+ const key=b.dataset.filter;
+ if(key==='all'){activeFilters.clear();activeRatings.clear();}
+ else if(activeFilters.has(key))activeFilters.delete(key);
+ else activeFilters.add(key);
+ displayLimit=12;updateFilterButtons();updateRatingButtons();render();
+});
 search.addEventListener('input',()=>{displayLimit=12;render();});
 document.querySelector('#load-more').addEventListener('click',()=>loadNextRecords(true));
 document.addEventListener('click',event=>{const b=event.target.closest('[data-entry]');if(b)showEntry(b.dataset.entry);});
@@ -194,7 +244,7 @@ document.querySelectorAll('dialog').forEach(dialog=>{
 });
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!document.querySelector('dialog[open]')&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){event.preventDefault();search.focus();search.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});}});
 document.addEventListener('error',event=>{const img=event.target;if(img.tagName!=='IMG'||!img.closest('.cover-photo'))return;const card=img.closest('.cover-photo');card.classList.add('image-unavailable','cover-typographic');card.classList.remove('cover-photo');img.remove();const label=document.createElement('span');label.className='real-cover-title';label.textContent=img.alt.replace(/ — cover artwork$/,'');card.append(label);},true);
-initFilters();renderFavorites();render();
+initFilters();initRatingFilters();renderFavorites();render();
 if('IntersectionObserver' in window){
  document.documentElement.classList.add('auto-load-ready');
  autoMoreObserver=new IntersectionObserver(items=>{if(items.some(item=>item.isIntersecting))queueAutoMore();},{rootMargin:'0px 0px 900px 0px'});

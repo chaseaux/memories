@@ -27,7 +27,7 @@
   menuResult.textContent=count?`${count} ${count===1?'object':'objects'}`:'No matches. Try another search.';
   viewResults.disabled=count===0;
   viewResults.innerHTML=count?`View ${count} ${count===1?'object':'objects'} <span aria-hidden="true">↗</span>`:'No matches';
-  document.querySelector('#menu-reset').hidden=!document.querySelector('#search').value&&!document.querySelector('.filter.active:not([data-filter="all"])');
+  document.querySelector('#menu-reset').hidden=!document.querySelector('#search').value&&!document.querySelector('.filter.active:not([data-filter="all"]),.rating-filter.active');
  }
  new MutationObserver(updateResults).observe(document.querySelector('#result-count'),{childList:true,characterData:true,subtree:true});updateResults();
  document.querySelector('#menu-reset').addEventListener('click',()=>{
@@ -39,7 +39,12 @@
  new MutationObserver(()=>trigger.setAttribute('aria-expanded',String(menu.open))).observe(menu,{attributes:true,attributeFilter:['open']});
  // Keep the reference's centered navigation on the hero, then clear the artwork.
  let navFrame=0;
- function placeNav(){navFrame=0;document.querySelector('.central-nav').classList.toggle('nav-docked',document.querySelector('.object-stage').getBoundingClientRect().bottom<innerHeight*.6);}
+ function placeNav(){
+  navFrame=0;
+  const nav=document.querySelector('.central-nav'),layout=nav.querySelector('.collection-layout');
+  const docked=document.querySelector('.object-stage').getBoundingClientRect().bottom<innerHeight*.6;
+  nav.classList.toggle('nav-docked',docked);layout.hidden=!docked;
+ }
  function scheduleNav(){if(!navFrame)navFrame=requestAnimationFrame(placeNav);}
  addEventListener('scroll',scheduleNav,{passive:true});addEventListener('resize',scheduleNav,{passive:true});placeNav();
  const views=[document.querySelector('#view-objects'),document.querySelector('#view-index')];
@@ -54,14 +59,7 @@
   }
  },true);
  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
- const observer='IntersectionObserver' in window?new IntersectionObserver(items=>{
-  items.forEach(item=>{if(item.isIntersecting){item.target.classList.add('seen');observer.unobserve(item.target);}});
- },{threshold:.05}):null;
- function reveal(){document.querySelectorAll('.object-card:not([data-observed])').forEach(card=>{
-  card.dataset.observed='';
-  if(observer&&!reduced.matches){card.classList.add('will-reveal');observer.observe(card);}else card.classList.add('seen');
- });}
- reveal();new MutationObserver(reveal).observe(document.querySelector('#collection-grid'),{childList:true});
+ // Gallery cards enter and leave with scroll position; their opacity stays constant.
 
  // Keep the shared left-to-right orbit, with a loose cloud of works around its axis.
  // The period controls the overall rotation; each work has its own height, depth and lean.
@@ -82,7 +80,7 @@
  const tooltip=document.createElement('span');tooltip.className='field-tooltip';tooltip.setAttribute('aria-hidden','true');document.body.append(tooltip);
  let active=false,raf=0,lastTime=0,time=0,stageVisible=true;
  let drag=null,dragY=0,throwX=0,throwY=0,suppressClickUntil=0;
- const visible=new Set(),registered=new Set();
+ const visible=new Set(),registered=new Set(),galleryShift=new WeakMap();
  function measure(){
   const width=field.clientWidth,height=field.clientHeight;
   orbit.height=height;
@@ -135,18 +133,27 @@
   }
   orbit.rotation%=Math.PI*2;
   if(stageVisible)renderCylinder();
-  const scrollDepths=[],captionScales=[];
+  const scrollDepths=[],captionScales=[],gallerySlides=[];
   if(!grid.classList.contains('index-mode'))for(const item of visible){
    if(!item.classList.contains('object-card'))continue;
-   if(!item.matches(':hover,:focus-within')){
-    const r=item.getBoundingClientRect();scrollDepths.push([item,`${clamp((innerHeight*.5-r.top-r.height*.5)*.055,-24,24)}px`]);
-   }
+   const r=item.getBoundingClientRect(),previousY=galleryShift.get(item)||0;
+   const center=r.top+r.height*.5-previousY;
+   const progress=clamp((center-innerHeight*.5)/(innerHeight*.5+r.height*.5),-1,1);
+   const style=getComputedStyle(item),edge=progress*progress;
+   const x=(parseFloat(style.getPropertyValue('--entry-x'))||0)*edge;
+   const y=(parseFloat(style.getPropertyValue('--entry-y'))||0)*progress;
+   gallerySlides.push([item,x,y]);
+   if(!item.matches(':hover,:focus-within'))scrollDepths.push([item,`${clamp((innerHeight*.5-center)*.055,-24,24)}px`]);
    const caption=item.querySelector('.object-caption');
    if(caption){
     const r=caption.getBoundingClientRect(),distance=clamp(Math.abs(r.top+r.height*.5-innerHeight*.5)/(innerHeight*.5),0,1);
     const emphasis=(1+Math.cos(distance*Math.PI))*.5;
     captionScales.push([caption,(.96+.08*emphasis).toFixed(4)]);
    }
+  }
+  for(const[item,x,y]of gallerySlides){
+   item.style.setProperty('--slide-x',`${x.toFixed(3)}px`);item.style.setProperty('--slide-y',`${y.toFixed(3)}px`);
+   galleryShift.set(item,Number(y.toFixed(3)));
   }
   for(const[item,depth]of scrollDepths)item.style.setProperty('--scroll-depth',depth);
   for(const[caption,scale]of captionScales)caption.style.setProperty('--caption-scale',scale);

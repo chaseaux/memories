@@ -1,4 +1,4 @@
-"""Read the two approved Notion collections; publish only after a complete fetch."""
+"""Read the seven approved Notion collections; save only after a complete fetch."""
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.request import Request, urlopen
@@ -10,7 +10,10 @@ import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCES = {"brain": "09c7e6cf-051c-4e3f-9526-8e2e0393a640", "music": "4d14774e-bc83-4db1-a46d-5a9c77fea43d"}
+SOURCES = {"movies": "3cfb55cf-5b0a-4236-a6a4-2f61073cf176", "games": "7a6ce4bc-d682-4a12-8582-4f49c5c6552b", "books": "c0d7c7dc-ce9b-40fb-94ec-342d3afb56ed", "art": "046b65cd-1edc-43db-8dbd-e2708bd68a51", "live": "0259ef73-b72f-4d96-b38a-607930b62706", "arch": "7bc2f19f-0fde-4e42-be41-d935e770743f", "music": "4d14774e-bc83-4db1-a46d-5a9c77fea43d"}
+CATEGORIES = {"movies": "映画", "games": "ゲーム", "books": "本", "art": "アート", "live": "舞台・ライブ", "arch": "建築", "music": "音楽"}
+DATE_PROPERTIES = {"movies": ("体験日", "公開日"), "games": ("発売日",), "books": ("読書開始日",), "art": ("体験日",), "live": ("体験日",), "arch": ("訪問日",), "music": ("リリース日",)}
+DATE_LABELS = {"体験日": "EXPERIENCED ON", "公開日": "RELEASED ON", "発売日": "RELEASED ON", "読書開始日": "READING STARTED ON", "訪問日": "VISITED ON", "リリース日": "RELEASED ON"}
 LABELS = {"映画": "CINEMA", "本": "LITERATURE", "音楽": "MUSIC", "アート": "ART", "舞台・ライブ": "LIVE", "ゲーム": "GAMES", "建築": "ARCHITECTURE", "その他": "OTHER"}
 
 
@@ -169,8 +172,12 @@ def body_markdown(client, uid, depth=0):
 def normalize(page, source, body, cover):
     p = page["properties"]
     music = source == "music"
-    category = "音楽" if music else prop(p, "媒体", "その他") or "その他"
+    category = CATEGORIES.get(source, prop(p, "媒体", "その他") or "その他")
     rating = prop(p, "評価")
+    if rating is not None and (isinstance(rating, bool) or not isinstance(rating, (int, float)) or not 0 <= rating <= 10):
+        raise RuntimeError(f"Invalid personal rating for {page['id']}; expected a number from 0 to 10.")
+    date_keys = DATE_PROPERTIES.get(source, ("体験日",))
+    date_key, sort_date = next(((key, prop(p, key)) for key in date_keys if prop(p, key)), (date_keys[0], None))
     personal = re.search(r"^## 感想\s*\n([\s\S]*?)(?=^## |\Z)", body, re.M)
     title = prop(p, "アルバム名" if music else "タイトル", "")
     if not title:
@@ -181,9 +188,11 @@ def normalize(page, source, body, cover):
     return dict(id=page["id"].replace("-", ""), source=source, title=title, originalTitle=original,
                 creator=prop(p, "アーティスト" if music else "作者・監督", "") or "", category=category,
                 label=LABELS.get(category, "OTHER"), rating=rating,
-                ratingLabel=f"{rating:g} / 10" if music and isinstance(rating, (int, float)) else str(rating or "未評価"),
-                hallOfFame=rating == "殿堂入り" or prop(p, "GOAT", False) is True,
-                experiencedDate=prop(p, "体験日"), releaseDate=prop(p, "リリース日"), createdDate=prop(p, "作成日", page.get("created_time")),
+                ratingLabel=f"{rating:g} / 10" if rating is not None else "未評価", ratingScale=10,
+                hallOfFame=prop(p, "GOAT", False) is True, legacy=prop(p, "レガシー", prop(p, "Legacy", False)) is True,
+                sortDate=sort_date, sortDateProperty=date_key, dateLabel=DATE_LABELS[date_key], sourceDatabase="collection://" + SOURCES[source] if source in SOURCES else None,
+                experiencedDate=prop(p, "体験日"), releaseDate=prop(p, "リリース日") if music else prop(p, "公開日") or prop(p, "発売日"),
+                readingStartedDate=prop(p, "読書開始日"), visitedDate=prop(p, "訪問日"), createdDate=prop(p, "作成日", page.get("created_time")),
                 tags=prop(p, "タグ", []), note=(personal.group(1).strip() if personal else "") if music else prop(p, "感想", "") or "",
                 body=body, format=prop(p, "フォーマット"),
                 scores={key: prop(p, key) for key in ("Metacritic", "Rotten Tomatoes", "Pitchfork", "IGN") if prop(p, key) is not None},
@@ -237,14 +246,14 @@ def sync(client, root=ROOT):
         staging = Path(temporary)
         for source, source_id in SOURCES.items():
             pages = [p for p in client.query(source_id) if not p.get("in_trash") and not p.get("archived")]
-            if not pages:
-                raise RuntimeError(f"Collection '{source}' returned no rows; keeping the current site.")
             groups[source] = []
             for page in pages:
                 body = body_markdown(client, page["id"])
                 cover = cover_image(page, staging, old_entries.get(page["id"].replace("-", ""), {}).get("cover"), root)
                 groups[source].append(normalize(page, source, body, cover))
         rows = [entry for i in range(max(map(len, groups.values()))) for source in SOURCES for entry in groups[source][i:i + 1]]
+        if not rows:
+            raise RuntimeError("All collections returned no rows; keeping the current site.")
         if len({e["id"] for e in rows}) != len(rows):
             raise RuntimeError("Duplicate page IDs in source collections.")
         files = list((staging / "assets" / "covers").glob("*"))
@@ -262,7 +271,7 @@ def sync(client, root=ROOT):
         temporary_data = root / "data.js.tmp"
         temporary_data.write_text("const ARCHIVE = " + json.dumps(archive, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
         temporary_data.replace(root / "data.js")
-        print(f"Updated {len(rows)} records from the two approved collections.")
+        print(f"Updated {len(rows)} records from the seven approved collections.")
         return True
 
 

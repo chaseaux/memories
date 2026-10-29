@@ -24,7 +24,8 @@ def page(source, number):
 
 class FakeClient:
     def query(self, uid):
-        return [page("music" if uid == sync.SOURCES["music"] else "brain", 2 if uid == sync.SOURCES["music"] else 1)]
+        source = next(key for key, value in sync.SOURCES.items() if value == uid)
+        return [] if source == "books" else [page(source, list(sync.SOURCES).index(source) + 1)]
 
     def blocks(self, uid):
         return [{"id": "heading", "type": "heading_2", "heading_2": {"rich_text": rt("感想")}},
@@ -96,9 +97,9 @@ class SyncTests(unittest.TestCase):
             (root / "data.js").write_text('const ARCHIVE = {"entries":[{"id":"removed"}]};', encoding="utf-8")
             self.assertTrue(sync.sync(FakeClient(), root))
             result = sync.read_archive(root / "data.js")
-            self.assertEqual(len(result["entries"]), 2)
+            self.assertEqual(len(result["entries"]), len(sync.SOURCES) - 1)
             self.assertNotIn("removed", [e["id"] for e in result["entries"]])
-            self.assertEqual(result["entries"][1]["note"], "Updated note")
+            self.assertEqual(next(e for e in result["entries"] if e["source"] == "music")["note"], "Updated note")
             original = (root / "data.js").read_bytes()
             self.assertFalse(sync.sync(FakeClient(), root))
             self.assertEqual((root / "data.js").read_bytes(), original)
@@ -108,6 +109,33 @@ class SyncTests(unittest.TestCase):
         with patch.object(client, "blocks", return_value=[{"id": "unknown", "type": "unsupported"}]):
             with self.assertRaises(RuntimeError):
                 sync.body_markdown(client, "page")
+
+    def test_collection_dates_numeric_ratings_and_checkboxes(self):
+        expected = {"movies": "体験日", "games": "発売日", "books": "読書開始日", "art": "体験日", "live": "体験日", "arch": "訪問日", "music": "リリース日"}
+        for source, field in expected.items():
+            with self.subTest(source=source):
+                row = page(source, 1)
+                row["properties"][field] = {"type": "date", "date": {"start": "2026-10-01"}}
+                row["properties"]["GOAT"] = {"type": "checkbox", "checkbox": True}
+                row["properties"]["レガシー"] = {"type": "checkbox", "checkbox": False}
+                entry = sync.normalize(row, source, "", None)
+                self.assertEqual(entry["sortDate"], "2026-10-01")
+                self.assertEqual(entry["ratingLabel"], "0 / 10")
+                self.assertTrue(entry["hallOfFame"])
+                self.assertFalse(entry["legacy"])
+        row = page("movies", 1)
+        row["properties"]["公開日"] = {"type": "date", "date": {"start": "1990-01-01"}}
+        entry = sync.normalize(row, "movies", "", None)
+        self.assertEqual(entry["sortDate"], "1990-01-01")
+        self.assertFalse(entry["legacy"])
+        row["properties"]["レガシー"] = {"type": "checkbox", "checkbox": True}
+        self.assertTrue(sync.normalize(row, "movies", "", None)["legacy"])
+
+    def test_non_numeric_personal_rating_preserves_existing_snapshot(self):
+        row = page("movies", 1)
+        row["properties"]["評価"] = {"type": "select", "select": {"name": "★★★★"}}
+        with self.assertRaises(RuntimeError):
+            sync.normalize(row, "movies", "", None)
 
 
 if __name__ == "__main__":

@@ -30,7 +30,7 @@ jobs:
       - name: Check sync behavior
         run: python3 -m unittest discover -s tests -v
       - name: Check animation optimizations
-        run: node --test tests/paper.test.cjs
+        run: node --test tests/paper.test.cjs tests/archive.test.cjs
       - name: Read current Notion records
         if: github.event_name != 'push'
         env:
