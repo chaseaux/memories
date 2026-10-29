@@ -65,7 +65,7 @@
 
  // Keep the shared left-to-right orbit, with a loose cloud of works around its axis.
  // The period controls the overall rotation; each work has its own height, depth and lean.
- const orbit={period:64,radius:320,perspective:1100,rotation:0};
+ const orbit={period:64,radius:320,perspective:1100,rotation:0,height:700};
  const heights=[-.9,.45,-.2,.95,-.6,.1,.72,-.95,.3,-.35,.86,-.55,.05,.6,-.78];
  const root=document.documentElement,field=document.querySelector('.object-stage');
  const grid=document.querySelector('#collection-grid'),fine=matchMedia('(hover: hover) and (pointer: fine)');
@@ -85,6 +85,7 @@
  const visible=new Set(),registered=new Set();
  function measure(){
   const width=field.clientWidth,height=field.clientHeight;
+  orbit.height=height;
   orbit.radius=Math.min(width*.32,height*.57);orbit.perspective=Math.max(650,orbit.radius*3.4);
   stage.style.perspective=`${orbit.perspective}px`;
   models.forEach(m=>{
@@ -102,10 +103,11 @@
    const sway=reduced.matches?0:Math.sin(phase)*20+Math.cos(phase*.71)*8;
    const tilt=reduced.matches?0:Math.sin(phase*.8)*6;
    // Counter perspective's vertical compression so distant works still fill the top and bottom.
-   const screenY=Math.max(-field.clientHeight*.46,Math.min(field.clientHeight*.46,m.y+sway+dragY*.15));
+   const screenY=Math.max(-orbit.height*.46,Math.min(orbit.height*.46,m.y+sway+dragY*.15));
    const y=screenY*(orbit.perspective-z)/orbit.perspective;
    m.item.style.transform=`translate(-50%,-50%) translate3d(${x.toFixed(2)}px,${y.toFixed(2)}px,${z.toFixed(2)}px) rotateY(${(angle*180/Math.PI+m.yaw+tilt*.7).toFixed(3)}deg)`;
-   // Keep the original DOM stacking order throughout the orbit; never promote the frontmost work.
+   // Composite whole objects from back to front without intersecting their paper surfaces.
+   m.item.style.zIndex=String(10000+Math.round(z*10));
    m.item.style.setProperty('--turn-x',`${(m.pitch+tilt).toFixed(2)}deg`);
    m.item.style.setProperty('--turn-z',`${(m.roll+tilt*.6).toFixed(2)}deg`);
    if(active&&visible.has(m.item))m.paper?.render(time,drag?.vx||throwX);
