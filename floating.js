@@ -3,7 +3,7 @@
  const stage=document.querySelector('#stage-objects');
  const objectCount=15;
  function drawStage(){
-  const pool=[...entries];
+  const pool=entries.filter(e=>typeof e.cover==='string'&&e.cover.trim().length>0);
   for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
   stage.innerHTML=pool.slice(0,objectCount).map((e,i)=>{
    const material=e.category==='音楽'?'is-disc':e.category==='映画'?'is-poster':e.category==='アート'?'is-framed':'';
