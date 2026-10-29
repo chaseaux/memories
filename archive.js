@@ -1,6 +1,7 @@
 'use strict';
 const entries=ARCHIVE.entries.map(e=>({...e,pageTitle:e.title,title:e.category==='映画'?(e.originalTitle?.trim()||e.title):e.title})).sort((a,b)=>(b.experiencedDate||b.releaseDate||'').slice(0,10).localeCompare((a.experiencedDate||a.releaseDate||'').slice(0,10))),grid=document.querySelector('#collection-grid'),search=document.querySelector('#search'),filters=document.querySelector('.filters'),detailDialog=document.querySelector('#detail-dialog'),aboutDialog=document.querySelector('#about-dialog');
 let activeFilter='all',displayLimit=12;
+let autoMoreObserver=null,autoMoreFrame=0;
 const escapeHTML=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isJapanese=v=>/[\u3040-\u30ff\u3400-\u9fff]/.test(v);
 const pad=v=>String(v).padStart(2,'0');
@@ -87,7 +88,7 @@ function cardMarkup(e){
  if(document.documentElement.dataset.edition==='floating')return `<article class="object-card"><button class="object-open" data-entry="${e.id}" aria-label="Read the note: ${escapeHTML(e.title)}"><span class="object-index">${pad(entries.indexOf(e)+1)}</span>${coverMarkup(e)}<span class="object-caption"><span class="object-title"${isJapanese(e.title)?' lang="ja"':''}>${escapeHTML(e.title)}</span><span class="object-label">${e.label}</span><span class="object-rating">${escapeHTML(ratingText(e))}</span></span><span class="hover-label" aria-hidden="true">Open ↗</span></button></article>`;
  return `<article class="object-card"><button class="object-open" data-entry="${e.id}" aria-label="Read the note: ${escapeHTML(e.title)}">${coverMarkup(e)}<div class="card-content"><div class="object-meta"><span>${e.label}</span><span>${date?`${e.source==='music'?'RELEASED':'EXPERIENCED'} ${formatDate(date)}`:'UNDATED'}</span></div><h3 class="object-title${isJapanese(e.title)?' jp':''}"${isJapanese(e.title)?' lang="ja"':''}>${escapeHTML(e.title)}</h3><p class="object-creator">${escapeHTML(e.creator||'Creator unrecorded')}</p><p class="card-excerpt${e.note?'':' is-empty'}"${isJapanese(e.note)?' lang="ja"':''}>${escapeHTML(e.note||'No note.')}</p><div class="object-bottom"><span class="card-rating${e.hallOfFame?' is-favorite':''}">${e.hallOfFame?'◇ ':''}${escapeHTML(ratingText(e))}${e.hallOfFame&&e.source==='music'?' · GOAT':''}</span><span class="card-read">Read note <span class="card-arrow" aria-hidden="true">↗</span></span></div></div></button></article>`;
 }
-function render(append=false){
+function render(append=false,focusAdded=false){
  if(!append)document.querySelector('#load-status').textContent='';
  const q=search.value.trim().normalize('NFKC').toLocaleLowerCase('ja');
  let visible=entries.filter(e=>(activeFilter==='all'||e.category===activeFilter)&&[e.title,e.pageTitle,e.originalTitle,e.creator,e.category,e.label,e.note,...e.tags].join(' ').normalize('NFKC').toLocaleLowerCase('ja').includes(q));
@@ -103,8 +104,22 @@ function render(append=false){
  if(append){
   document.querySelector('#load-status').textContent=`${shown.length-previousCount} more records added. Showing ${shown.length} of ${visible.length}.`;
   // Continue keyboard reading at the newly inserted content without scrolling.
-  grid.children[previousCount]?.querySelector('button').focus({preventScroll:true});
+  if(focusAdded)grid.children[previousCount]?.querySelector('button').focus({preventScroll:true});
  }
+ if(autoMoreObserver)queueAutoMore();
+}
+function loadNextRecords(focusAdded=false){
+ if(document.querySelector('#load-more').hidden)return;
+ displayLimit+=12;render(true,focusAdded);
+}
+function queueAutoMore(){
+ if(autoMoreFrame)return;
+ autoMoreFrame=requestAnimationFrame(()=>{
+  autoMoreFrame=0;
+  if(document.hidden||document.querySelector('dialog[open]')||document.querySelector('#load-more').hidden)return;
+  const bounds=document.querySelector('.load-more-wrap').getBoundingClientRect();
+  if(bounds.top<=innerHeight+900&&bounds.bottom>=0)loadNextRecords();
+ });
 }
 function detailSources(e){
  const links=Object.entries(e.links).filter(([,u])=>safeURL(u));
@@ -163,7 +178,7 @@ function renderFavorites(){
 }
 filters.addEventListener('click',event=>{const b=event.target.closest('[data-filter]');if(!b)return;activeFilter=b.dataset.filter;displayLimit=12;filters.querySelectorAll('[data-filter]').forEach(item=>{const selected=item===b;item.classList.toggle('active',selected);item.setAttribute('aria-pressed',String(selected));});render();});
 search.addEventListener('input',()=>{displayLimit=12;render();});
-document.querySelector('#load-more').addEventListener('click',()=>{displayLimit+=12;render(true);});
+document.querySelector('#load-more').addEventListener('click',()=>loadNextRecords(true));
 document.addEventListener('click',event=>{const b=event.target.closest('[data-entry]');if(b)showEntry(b.dataset.entry);});
 document.querySelector('#reset-search').addEventListener('click',()=>{search.value='';filters.querySelector('[data-filter="all"]').click();search.focus();});
 for(const id of ['about-open','credits-open'])document.getElementById(id)?.addEventListener('click',()=>{if(floatingEdition&&id==='about-open')return;openArchiveDialog(aboutDialog);});
@@ -180,5 +195,12 @@ document.querySelectorAll('dialog').forEach(dialog=>{
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!document.querySelector('dialog[open]')&&!['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)){event.preventDefault();search.focus();search.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});}});
 document.addEventListener('error',event=>{const img=event.target;if(img.tagName!=='IMG'||!img.closest('.cover-photo'))return;const card=img.closest('.cover-photo');card.classList.add('image-unavailable','cover-typographic');card.classList.remove('cover-photo');img.remove();const label=document.createElement('span');label.className='real-cover-title';label.textContent=img.alt.replace(/ — cover artwork$/,'');card.append(label);},true);
 initFilters();renderFavorites();render();
+if('IntersectionObserver' in window){
+ document.documentElement.classList.add('auto-load-ready');
+ autoMoreObserver=new IntersectionObserver(items=>{if(items.some(item=>item.isIntersecting))queueAutoMore();},{rootMargin:'0px 0px 900px 0px'});
+ autoMoreObserver.observe(document.querySelector('.load-more-wrap'));
+ document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('close',queueAutoMore));
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)queueAutoMore();});
+}
 document.querySelectorAll('[data-snapshot-date]').forEach(item=>item.textContent=ARCHIVE.snapshotDate);
 if(document.querySelector('#archive-total'))document.querySelector('#archive-total').textContent=`${pad(entries.length)} OBJECTS / 02 COLLECTIONS`;
