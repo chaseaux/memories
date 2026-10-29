@@ -112,6 +112,7 @@ def body_markdown(client, uid, depth=0):
     if depth > 20:
         raise RuntimeError("Page nesting exceeded the sync limit.")
     lines = []
+    previous_kind = None
     for block in client.blocks(uid):
         if block.get("in_trash") or block.get("archived"):
             continue
@@ -150,13 +151,18 @@ def body_markdown(client, uid, depth=0):
             text = f"[Notion](https://www.notion.so/{link_id.replace('-', '')})" if link_id else ""
         else:
             raise RuntimeError(f"Unsupported Notion block type '{kind}'; previous content was preserved.")
-        if text:
-            lines.append(text)
         if block.get("has_children") and kind not in ("child_page", "child_database"):
             parent = (data.get("synced_from") or {}).get("block_id", block["id"])
             child = body_markdown(client, parent, depth + 1)
             if child:
-                lines.append("\n".join("  " + line for line in child.splitlines()) if kind in ("bulleted_list_item", "numbered_list_item", "to_do") else child)
+                nested = "\n".join("  " + line for line in child.splitlines()) if kind in ("bulleted_list_item", "numbered_list_item", "to_do") else child
+                text += ("\n" if kind in ("bulleted_list_item", "numbered_list_item", "to_do") else "\n\n") + nested
+        if text:
+            if lines and kind == previous_kind and kind in ("bulleted_list_item", "numbered_list_item", "to_do"):
+                lines[-1] += "\n" + text
+            else:
+                lines.append(text)
+        previous_kind = kind
     return "\n\n".join(lines).strip()
 
 

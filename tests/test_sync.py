@@ -44,6 +44,12 @@ class SyncTests(unittest.TestCase):
         item["href"] = "https://example.com/song"
         self.assertEqual(sync.rich_text([item], True), "[Song](https://example.com/song)")
 
+    def test_tracks_remain_one_continuous_numbered_list(self):
+        client = FakeClient()
+        blocks = [{"id": str(i), "type": "numbered_list_item", "numbered_list_item": {"rich_text": rt(name)}} for i, name in enumerate(("First", "Second", "Third"))]
+        with patch.object(client, "blocks", return_value=blocks):
+            self.assertEqual(sync.body_markdown(client, "page"), "1. First\n1. Second\n1. Third")
+
     def test_pagination(self):
         client = sync.Notion("not-a-real-token")
         with patch.object(client, "request", side_effect=[{"results": [1], "has_more": True, "next_cursor": "next"}, {"results": [2], "has_more": False}]) as request:

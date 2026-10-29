@@ -6,7 +6,7 @@ const isJapanese=v=>/[\u3040-\u30ff\u3400-\u9fff]/.test(v);
 const pad=v=>String(v).padStart(2,'0');
 const formatDate=v=>v?v.slice(0,10).replaceAll('-','.'):'UNDATED';
 const categoryNames={'all':'All objects','映画':'Cinema','音楽':'Music','アート':'Art','舞台・ライブ':'Live','建築':'Architecture','ゲーム':'Games','本':'Books','その他':'Other'};
-const ratingText=e=>e.ratingLabel.replace('殿堂入り','Hall of fame').replace('未評価','Unrated').replace('未記録','Unrated');
+const ratingText=e=>e.ratingLabel.replace('殿堂入り','★★★★★').replace('未評価','Unrated').replace('未記録','Unrated');
 const safeURL=v=>{try{const u=new URL(v);return ['https:','http:'].includes(u.protocol)?u.href:'';}catch{return '';}};
 // The object edition uses short panel transitions; other editions keep native dialogs.
 const floatingEdition=document.documentElement.dataset.edition==='floating';
