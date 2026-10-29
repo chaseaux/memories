@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en" data-edition="floating">
+<head>
+ <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+ <meta name="color-scheme" content="light"><meta name="robots" content="noindex,nofollow">
+ <meta name="description" content="Personal collection. Films, music, art, and notes.">
+ <title>Memories — Object edition</title>
+ <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23e2ff70'/%3E%3C/svg%3E">
+ <link rel="stylesheet" href="reference-tokens.css"><link rel="stylesheet" href="floating.css">
+ <script src="data.js" defer></script><script src="archive.js" defer></script><script src="paper.js" defer></script><script src="section-scroll.js" defer></script><script src="floating.js" defer></script>
+</head>
+<body>
+ <a href="#collection" class="skip">Skip to collection</a>
+ <nav class="central-nav" aria-label="Main navigation"><a href="#top" class="wordmark" aria-label="Memories — from chaseaux"><span class="wordmark-window" aria-hidden="true"><span class="wordmark-rotor"><span class="wordmark-face">Memories</span><span class="wordmark-face wordmark-face-alt">from chaseaux</span></span></span></a><span class="status-pip" aria-hidden="true"></span><button class="menu-trigger" id="menu-open" aria-haspopup="dialog" aria-controls="menu-dialog" aria-expanded="false">Menu <span aria-hidden="true">+</span></button></nav>
+ <main id="top">
+  <section class="object-stage" aria-label="Selected works">
+   <div id="stage-objects"></div>
+   <div class="stage-foot"><a class="neutral-link" href="#collection">Collection ↓</a></div>
+  </section>
+  <section class="collection" id="collection" aria-labelledby="collection-title">
+   <div class="collection-heading"><h2 id="collection-title">Collection</h2><p id="result-count" role="status" aria-live="polite">39 objects</p></div>
+   <div id="collection-grid" class="collection-grid"></div>
+   <div class="load-more-wrap"><span id="shown-count"></span><button id="load-more" class="pill" aria-controls="collection-grid">Load more ↓</button></div>
+   <p id="load-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
+   <div id="empty-state" class="empty-state" hidden><h3>No results</h3><button class="pill" id="reset-search">Clear filters</button></div>
+  </section>
+ </main>
+ <dialog id="menu-dialog" class="menu-dialog" aria-labelledby="menu-title">
+  <div class="panel-heading"><h2 id="menu-title">Menu</h2><button class="dialog-close" aria-label="Close menu">Close ×</button></div>
+  <label class="search"><span>Search</span><input id="search" type="search" placeholder="Title, artist, or note" aria-label="Search titles, creators, and notes" enterkeyhint="search"></label>
+  <div class="filters" role="group" aria-label="Filter by medium"></div>
+  <div class="view-controls" role="group" aria-label="Collection layout"><button id="view-objects" aria-pressed="true">Objects</button><button id="view-index" aria-pressed="false">Index</button></div>
+  <div class="menu-result-row"><p id="menu-result" role="status" aria-live="polite">39 objects</p><button id="menu-reset" class="neutral-link" hidden>Clear filters</button></div>
+  <button class="view-results" id="view-results">View collection <span aria-hidden="true">↗</span></button>
+ </dialog>
+ <button id="design-options-open" class="neutral-link" hidden>Design options</button>
+ <dialog id="nav-design-dialog" class="nav-design-dialog" aria-labelledby="nav-design-title">
+  <div class="panel-heading"><h2 id="nav-design-title">Navigation / 3 options</h2><button class="dialog-close" aria-label="Close design options">Close ×</button></div>
+  <div class="nav-design-options">
+   <button class="design-choice" data-design="graphite" aria-label="Preview A: Graphite"><span class="design-label">A / Graphite</span><span class="nav-sample sample-graphite"><span>Memories</span><span>Menu +</span></span></button>
+   <button class="design-choice" data-design="split" aria-label="Preview B: Split"><span class="design-label">B / Split</span><span class="nav-sample sample-split"><span>Memories</span><span>+</span></span></button>
+   <button class="design-choice" data-design="outline" aria-label="Preview C: Outline"><span class="design-label">C / Outline</span><span class="nav-sample sample-outline"><span>Memories</span><span>Menu ↗</span></span></button>
+  </div>
+ </dialog>
+ <dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><button class="dialog-close" aria-label="Close detail">Close ×</button><div id="detail-content"></div></dialog>
+</body>
+</html>
