@@ -125,6 +125,8 @@ html.section-sliding{scroll-behavior:auto!important}
 .collection{scroll-margin-top:0}
 .collection{padding-bottom:110px}
 .auto-load-ready #load-more{display:none}
+.collection-grid:not(.index-mode) .object-caption{scale:var(--caption-scale,1);transform-origin:left center;transition:scale .16s ease-out}
+@media(prefers-reduced-motion:reduce){.collection-grid:not(.index-mode) .object-caption{scale:1;transition:none}}
 .source-links:empty{display:none}
 .score-context{display:block;margin-top:4px;color:#737373;font-size:12px;line-height:1.6}
 .detail-disclaimer a{text-decoration:underline;text-underline-offset:4px;display:inline-block;padding:8px 0}

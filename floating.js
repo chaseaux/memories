@@ -135,12 +135,21 @@
   }
   orbit.rotation%=Math.PI*2;
   if(stageVisible)renderCylinder();
-  const scrollDepths=[];
+  const scrollDepths=[],captionScales=[];
   if(!grid.classList.contains('index-mode'))for(const item of visible){
-   if(!item.classList.contains('object-card')||item.matches(':hover,:focus-within'))continue;
-   const r=item.getBoundingClientRect();scrollDepths.push([item,`${clamp((innerHeight*.5-r.top-r.height*.5)*.055,-24,24)}px`]);
+   if(!item.classList.contains('object-card'))continue;
+   if(!item.matches(':hover,:focus-within')){
+    const r=item.getBoundingClientRect();scrollDepths.push([item,`${clamp((innerHeight*.5-r.top-r.height*.5)*.055,-24,24)}px`]);
+   }
+   const caption=item.querySelector('.object-caption');
+   if(caption){
+    const r=caption.getBoundingClientRect(),distance=clamp(Math.abs(r.top+r.height*.5-innerHeight*.5)/(innerHeight*.5),0,1);
+    const emphasis=(1+Math.cos(distance*Math.PI))*.5;
+    captionScales.push([caption,(.96+.08*emphasis).toFixed(4)]);
+   }
   }
   for(const[item,depth]of scrollDepths)item.style.setProperty('--scroll-depth',depth);
+  for(const[caption,scale]of captionScales)caption.style.setProperty('--caption-scale',scale);
   if(stageVisible||Math.abs(throwX)+Math.abs(throwY)>1)requestFrame();
  }
  function hideTooltip(){tooltip.classList.remove('visible');}
