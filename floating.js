@@ -110,7 +110,7 @@
    m.item.style.zIndex=String(10000+Math.round(z*10));
    m.item.style.setProperty('--turn-x',`${(m.pitch+tilt).toFixed(2)}deg`);
    m.item.style.setProperty('--turn-z',`${(m.roll+tilt*.6).toFixed(2)}deg`);
-   if(active&&visible.has(m.item))m.paper?.render(time,drag?.vx||throwX);
+   if(active&&m.paper&&visible.has(m.item)&&posterFacesCamera(angle+(m.yaw+tilt*.7)*Math.PI/180,(m.pitch+tilt)*Math.PI/180,x,y,z,orbit.perspective))m.paper.render(time,drag?.vx||throwX);
   }
  }
  const visibility=new IntersectionObserver(items=>{
@@ -135,10 +135,12 @@
   }
   orbit.rotation%=Math.PI*2;
   if(stageVisible)renderCylinder();
+  const scrollDepths=[];
   if(!grid.classList.contains('index-mode'))for(const item of visible){
    if(!item.classList.contains('object-card')||item.matches(':hover,:focus-within'))continue;
-   const r=item.getBoundingClientRect();item.style.setProperty('--scroll-depth',`${clamp((innerHeight*.5-r.top-r.height*.5)*.055,-24,24)}px`);
+   const r=item.getBoundingClientRect();scrollDepths.push([item,`${clamp((innerHeight*.5-r.top-r.height*.5)*.055,-24,24)}px`]);
   }
+  for(const[item,depth]of scrollDepths)item.style.setProperty('--scroll-depth',depth);
   if(stageVisible||Math.abs(throwX)+Math.abs(throwY)>1)requestFrame();
  }
  function hideTooltip(){tooltip.classList.remove('visible');}
