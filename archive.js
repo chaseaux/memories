@@ -1,5 +1,5 @@
 'use strict';
-const entries=ARCHIVE.entries.map(e=>({...e,pageTitle:e.title,title:e.category==='映画'?(e.originalTitle?.trim()||e.title):e.title})).sort((a,b)=>(b.experiencedDate||'').slice(0,10).localeCompare((a.experiencedDate||'').slice(0,10))),grid=document.querySelector('#collection-grid'),search=document.querySelector('#search'),filters=document.querySelector('.filters'),detailDialog=document.querySelector('#detail-dialog'),aboutDialog=document.querySelector('#about-dialog');
+const entries=ARCHIVE.entries.map(e=>({...e,pageTitle:e.title,title:e.category==='映画'?(e.originalTitle?.trim()||e.title):e.title})).sort((a,b)=>(b.experiencedDate||b.releaseDate||'').slice(0,10).localeCompare((a.experiencedDate||a.releaseDate||'').slice(0,10))),grid=document.querySelector('#collection-grid'),search=document.querySelector('#search'),filters=document.querySelector('.filters'),detailDialog=document.querySelector('#detail-dialog'),aboutDialog=document.querySelector('#about-dialog');
 let activeFilter='all',displayLimit=12;
 const escapeHTML=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isJapanese=v=>/[\u3040-\u30ff\u3400-\u9fff]/.test(v);
