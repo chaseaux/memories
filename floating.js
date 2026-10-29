@@ -38,12 +38,14 @@
  });
  new MutationObserver(()=>trigger.setAttribute('aria-expanded',String(menu.open))).observe(menu,{attributes:true,attributeFilter:['open']});
  // Keep the reference's centered navigation on the hero, then clear the artwork.
+ // Keep Index available for a future return, while exposing only Objects today.
+ const collectionLayoutSwitchEnabled=false;
  let navFrame=0;
  function placeNav(){
   navFrame=0;
   const nav=document.querySelector('.central-nav'),layout=nav.querySelector('.collection-layout');
   const docked=document.querySelector('.object-stage').getBoundingClientRect().bottom<innerHeight*.6;
-  nav.classList.toggle('nav-docked',docked);layout.hidden=!docked;
+  nav.classList.toggle('nav-docked',docked);layout.hidden=!collectionLayoutSwitchEnabled||!docked;
  }
  function scheduleNav(){if(!navFrame)navFrame=requestAnimationFrame(placeNav);}
  addEventListener('scroll',scheduleNav,{passive:true});addEventListener('resize',scheduleNav,{passive:true});placeNav();
