@@ -50,6 +50,18 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(client.query("source"), [1, 2])
             self.assertEqual(request.call_args_list[1].args[1]["start_cursor"], "next")
 
+    def test_unavailable_cover_retains_existing_image(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            cover = root / "assets/covers/previous.jpg"
+            cover.parent.mkdir(parents=True)
+            cover.write_bytes(b"existing image")
+            row = page("brain", 1)
+            row["cover"] = {"type": "external", "external": {"url": "https://example.com/image"}}
+            with patch.object(sync, "urlopen", side_effect=sync.URLError("unavailable")), patch.object(sync.time, "sleep"):
+                self.assertEqual(sync.cover_image(row, root, "assets/covers/previous.jpg", root), "assets/covers/previous.jpg")
+                self.assertIsNone(sync.cover_image(row, root, None, root))
+
     def test_failed_fetch_preserves_site(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

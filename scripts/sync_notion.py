@@ -185,21 +185,32 @@ def normalize(page, source, body, cover):
                 url="https://app.notion.com/p/" + page["id"].replace("-", ""), cover=cover)
 
 
-def cover_image(page, staging):
+def cover_image(page, staging, previous=None, root=ROOT):
     cover = page.get("cover")
     if not cover:
         return None
     url = cover.get(cover.get("type"), {}).get("url", "")
-    if not url.startswith("https://"):
-        raise RuntimeError("A cover is not a downloadable HTTPS image.")
-    try:
-        with urlopen(Request(url, headers={"User-Agent": "MemoriesSync/1.0", "Accept": "image/*"}), timeout=40) as response:
-            ext = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif"}.get(response.headers.get_content_type())
-            data = response.read(16 * 1024 * 1024 + 1)
-            if not ext or len(data) > 16 * 1024 * 1024:
-                raise ValueError()
-    except Exception:
-        raise RuntimeError("Cover download failed; the published snapshot was preserved.") from None
+    error = "invalid URL"
+    for attempt in range(3):
+        try:
+            if not url.startswith("https://"):
+                break
+            with urlopen(Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; MemoriesSync/1.0)", "Accept": "image/*"}), timeout=25) as response:
+                data = response.read(16 * 1024 * 1024 + 1)
+                ext = ".png" if data.startswith(b"\x89PNG\r\n\x1a\n") else ".jpg" if data.startswith(b"\xff\xd8\xff") else ".gif" if data.startswith((b"GIF87a", b"GIF89a")) else ".webp" if data[:4] == b"RIFF" and data[8:12] == b"WEBP" else None
+                if not ext or len(data) > 16 * 1024 * 1024:
+                    raise ValueError("unsupported image")
+            break
+        except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+            error = f"HTTP {exc.code}" if isinstance(exc, HTTPError) else type(exc).__name__
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    else:
+        data = None
+    if not url.startswith("https://") or data is None:
+        valid_previous = previous and previous.startswith("assets/covers/") and ".." not in Path(previous).parts and (root / previous).is_file()
+        print(f"Cover unavailable for {page['id'].replace('-', '')} ({error}); using {'existing artwork' if valid_previous else 'text placeholder'}.")
+        return previous if valid_previous else None
     relative = "assets/covers/" + page["id"].replace("-", "") + ext
     dest = staging / relative
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -214,6 +225,7 @@ def read_archive(path):
 
 def sync(client, root=ROOT):
     old = read_archive(root / "data.js")
+    old_entries = {entry["id"]: entry for entry in old["entries"]}
     groups = {}
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary)
@@ -224,7 +236,7 @@ def sync(client, root=ROOT):
             groups[source] = []
             for page in pages:
                 body = body_markdown(client, page["id"])
-                cover = cover_image(page, staging)
+                cover = cover_image(page, staging, old_entries.get(page["id"].replace("-", ""), {}).get("cover"), root)
                 groups[source].append(normalize(page, source, body, cover))
         rows = [entry for i in range(max(map(len, groups.values()))) for source in SOURCES for entry in groups[source][i:i + 1]]
         if len({e["id"] for e in rows}) != len(rows):
