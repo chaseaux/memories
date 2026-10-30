@@ -5,7 +5,12 @@
   "vars": {
     "GITHUB_REPOSITORY": "chaseaux/memories",
     "NOTION_WORKSPACE_ID": "39541694-94a2-4a92-820c-50815a05155b"
-  }
-  // Create a KV namespace and bind it as NOTION_EVENTS before deploying.
+  },
+  "kv_namespaces": [
+    {
+      "binding": "NOTION_EVENTS",
+      "id": "f3a5b496f7024a8abbddcf51541b16f1"
+    }
+  ]
   // Set SETUP_KEY and GITHUB_TOKEN with Wrangler secrets, never in this file.
 }
