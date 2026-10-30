@@ -33,6 +33,45 @@ class FakeClient:
 
 
 class SyncTests(unittest.TestCase):
+    def test_unchanged_records_do_not_fetch_bodies_or_images(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'data.js').write_text('const ARCHIVE = {"entries":[]};', encoding='utf-8')
+            client = FakeClient()
+            sync.sync(client, root)
+            with patch.object(client, 'blocks', side_effect=AssertionError('Unchanged body fetched')), patch.object(sync, 'cover_image', side_effect=AssertionError('Unchanged cover fetched')):
+                self.assertFalse(sync.sync(client, root))
+
+    def test_only_changed_record_is_fetched_and_deleted_record_is_removed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'data.js').write_text('const ARCHIVE = {"entries":[]};', encoding='utf-8')
+            client = FakeClient()
+            sync.sync(client, root)
+            original_query = client.query
+            def changed_query(uid):
+                if uid == sync.SOURCES['arch']:
+                    return []
+                rows = original_query(uid)
+                if uid == sync.SOURCES['movies']:
+                    rows[0]['properties']['評価']['number'] = 8
+                return rows
+            with patch.object(client, 'query', side_effect=changed_query), patch.object(client, 'blocks', wraps=client.blocks) as blocks:
+                self.assertTrue(sync.sync(client, root))
+                self.assertEqual(blocks.call_count, 1)
+            entries = sync.read_archive(root / 'data.js')['entries']
+            self.assertFalse(any(e['source'] == 'arch' for e in entries))
+            self.assertEqual(next(e['rating'] for e in entries if e['source'] == 'movies'), 8)
+
+    def test_body_timestamp_and_signed_image_identity(self):
+        before = page('movies', 1)
+        before['last_edited_time'] = '2026-10-01T00:00:00Z'
+        before['cover'] = {'type': 'file', 'file': {'url': 'https://example.com/art.jpg?signature=old'}}
+        after = dict(before, cover={'type': 'file', 'file': {'url': 'https://example.com/art.jpg?signature=new'}})
+        self.assertEqual(sync.page_state(before, 'movies'), sync.page_state(after, 'movies'))
+        after['last_edited_time'] = '2026-10-02T00:00:00Z'
+        self.assertNotEqual(sync.page_state(before, 'movies'), sync.page_state(after, 'movies'))
+
     def test_zero_and_empty_scores(self):
         entry = sync.normalize(page("music", 1), "music", "## 感想\nNew note", None)
         self.assertEqual(entry["ratingLabel"], "0 / 10")

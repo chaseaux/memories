@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 import json
+import hashlib
 import os
 import re
 import tempfile
@@ -238,19 +239,65 @@ def read_archive(path):
     return json.loads(raw[raw.index("{"):].strip().removesuffix(";"))
 
 
+def cover_key(page):
+    cover = page.get("cover")
+    if not cover:
+        return None
+    kind = cover.get("type")
+    url = cover.get(kind, {}).get("url", "")
+    return [kind, url.split("?", 1)[0] if kind == "file" else url]
+
+
+def page_state(page, source):
+    payload = {"version": 1, "source": source, "properties": page["properties"], "cover": cover_key(page)}
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return {"edited": page.get("last_edited_time"), "fingerprint": digest, "cover": cover_key(page)}
+
+
+def save_json(path, value):
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
 def sync(client, root=ROOT):
     old = read_archive(root / "data.js")
     old_entries = {entry["id"]: entry for entry in old["entries"]}
-    groups = {}
+    state_path = root / ".notion-sync-state.json"
+    previous_state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
+    previous_state = previous_state.get("pages", {})
+    groups, next_state = {}, {}
+    fetched = reused = 0
     with tempfile.TemporaryDirectory() as temporary:
         staging = Path(temporary)
         for source, source_id in SOURCES.items():
             pages = [p for p in client.query(source_id) if not p.get("in_trash") and not p.get("archived")]
             groups[source] = []
             for page in pages:
-                body = body_markdown(client, page["id"])
-                cover = cover_image(page, staging, old_entries.get(page["id"].replace("-", ""), {}).get("cover"), root)
+                uid = page["id"].replace("-", "")
+                previous = old_entries.get(uid)
+                current = page_state(page, source)
+                prior = previous_state.get(uid)
+                valid_cover = bool(previous and previous.get("cover") and (root / previous["cover"]).is_file())
+                if previous and previous.get("source") == source and current == prior and (not page.get("cover") or valid_cover):
+                    groups[source].append(previous)
+                    next_state[uid] = current
+                    reused += 1
+                    continue
+                reuse_body = bool(previous and previous.get("source") == source and prior and current["fingerprint"] == prior.get("fingerprint") and current["edited"] == prior.get("edited"))
+                body = previous["body"] if reuse_body else body_markdown(client, page["id"])
+                if valid_cover and prior and prior.get("cover") == current["cover"]:
+                    cover = previous["cover"]
+                else:
+                    cover = cover_image(page, staging, previous.get("cover") if previous else None, root)
                 groups[source].append(normalize(page, source, body, cover))
+                if page.get("cover") and (not cover or (valid_cover and current["cover"] != (prior or {}).get("cover") and not list(staging.glob(f"assets/covers/{uid}.*")))):
+                    current["cover"] = (prior or {}).get("cover")
+                next_state[uid] = current
+                if reuse_body:
+                    reused += 1
+                else:
+                    fetched += 1
         rows = [entry for i in range(max(map(len, groups.values()))) for source in SOURCES for entry in groups[source][i:i + 1]]
         if not rows:
             raise RuntimeError("All collections returned no rows; keeping the current site.")
@@ -259,7 +306,8 @@ def sync(client, root=ROOT):
         files = list((staging / "assets" / "covers").glob("*"))
         images_changed = any(not (root / f.relative_to(staging)).exists() or (root / f.relative_to(staging)).read_bytes() != f.read_bytes() for f in files)
         if rows == old["entries"] and not images_changed:
-            print("No changes in Notion.")
+            save_json(state_path, {"version": 1, "pages": next_state})
+            print(f"No site changes. Retrieved {fetched} changed records; reused {reused} records.")
             return False
         now = datetime.now(timezone(timedelta(hours=9)))
         archive = dict(old, entries=rows, snapshotDate=now.strftime("%Y.%m.%d"), snapshotAt=now.isoformat())
@@ -271,7 +319,8 @@ def sync(client, root=ROOT):
         temporary_data = root / "data.js.tmp"
         temporary_data.write_text("const ARCHIVE = " + json.dumps(archive, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
         temporary_data.replace(root / "data.js")
-        print(f"Updated {len(rows)} records from the seven approved collections.")
+        save_json(state_path, {"version": 1, "pages": next_state})
+        print(f"Updated {len(rows)} records. Retrieved {fetched} changed records; reused {reused} records.")
         return True
 
 

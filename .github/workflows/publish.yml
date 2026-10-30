@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  repository_dispatch:
+    types: [notion_changed]
   schedule:
     # 04:17 Japan Standard Time. Scheduled runs may start later during GitHub congestion.
     - cron: '17 19 * * *'
@@ -30,7 +32,7 @@ jobs:
       - name: Check sync behavior
         run: python3 -m unittest discover -s tests -v
       - name: Check animation optimizations
-        run: node --test tests/paper.test.cjs tests/archive.test.cjs
+        run: node --test tests/paper.test.cjs tests/archive.test.cjs tests/webhook.test.mjs
       - name: Read current Notion records
         if: github.event_name != 'push'
         env:
@@ -41,14 +43,17 @@ jobs:
         shell: bash
         run: |
           git add -- data.js assets/covers
-          if git diff --cached --quiet; then
+          if [ -f .notion-sync-state.json ]; then git add -- .notion-sync-state.json; fi
+          if git diff --cached --quiet -- data.js assets/covers; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
           else
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+          if ! git diff --cached --quiet; then
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git commit -m 'Update Notion snapshot'
             git push origin HEAD:main
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
           fi
       - name: Package site
         if: github.event_name == 'push' || steps.snapshot.outputs.changed == 'true'
