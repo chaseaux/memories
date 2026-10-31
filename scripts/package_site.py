@@ -14,7 +14,7 @@ if dest.exists():
         raise ValueError("Refusing to clean an output directory outside the repository")
     shutil.rmtree(dest)
 dest.mkdir(exist_ok=True)
-for name in ("index.html", "floating.css", "reference-tokens.css", "archive.js", "paper.js", "section-scroll.js", "floating.js", "data.js", ".nojekyll", "assets/inter.ttf", "assets/Inter-OFL.txt"):
+for name in ("index.html", "floating.css", "reference-tokens.css", "archive.js", "paper.js", "section-scroll.js", "detail-transition.js", "collection-snap.js", "floating.js", "data.js", ".nojekyll", "assets/inter.ttf", "assets/Inter-OFL.txt"):
     out = dest / name
     out.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(root / name, out)
@@ -34,4 +34,12 @@ def version(match):
     return f'{match[1]}="{path}?v={digest}"'
 html = re.sub(r'(src|href)="([^"?]+\.(?:js|css))(?:\?[^"]*)?"', version, html)
 (dest / "index.html").write_text(html, encoding="utf-8")
+# Validate the packaged artifact rather than trusting the asset-copy list.
+for reference in re.findall(r'(?:src|href)="([^"<>]+)"', html):
+    if reference.startswith(("#", "https:", "http:", "data:")):
+        continue
+    relative = reference.split("?", 1)[0].split("#", 1)[0]
+    if relative and not (dest / relative).is_file():
+        raise ValueError(f"Packaged HTML references a missing asset: {relative}")
+
 print(f"Packaged the site in _site/. Cover image bytes: {original_bytes} -> {published_bytes} ({1-published_bytes/max(1,original_bytes):.1%} smaller).")

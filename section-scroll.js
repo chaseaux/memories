@@ -3,14 +3,14 @@ const sectionNavigation=(()=>{
  'use strict';
  const root=document.documentElement,collection=document.querySelector('#collection');
  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
- let frame=0,moving=false,settling=false,releaseAt=0,lastWheel=-Infinity,wheelSum=0,touch=null,destination='top';
+ let frame=0,moving=false,settling=false,releaseAt=0,lastWheel=-Infinity,wheelSum=0,touch=null,destination='top',nativeWheel=false;
  const boundary=()=>Math.max(0,collection.getBoundingClientRect().top+scrollY);
  const dialogOpen=()=>!!document.querySelector('dialog[open]');
  const editable=target=>target instanceof Element&&!!target.closest('input,textarea,select,[contenteditable="true"]');
  function finish(target,focus){
   scrollTo({top:target,behavior:'instant'});moving=false;frame=0;root.classList.remove('section-sliding');
   settling=true;releaseAt=performance.now()+140;wheelSum=0;
-  if(focus){const heading=document.querySelector('#collection-title');heading.setAttribute('tabindex','-1');heading.focus({preventScroll:true});}
+  if(focus){const heading=root.classList.contains('collection-windowed')?document.querySelector('#collection-viewport'):document.querySelector('#collection-title');heading.setAttribute('tabindex','-1');heading.focus({preventScroll:true});}
  }
  function slide(where,{focus=false}={}){
   if(dialogOpen())return;
@@ -37,8 +37,12 @@ const sectionNavigation=(()=>{
  function wheel(event){
   if(event.ctrlKey||event.metaKey||event.shiftKey||Math.abs(event.deltaX)>Math.abs(event.deltaY)||dialogOpen()||editable(event.target))return;
   const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?innerHeight:1);
-  if(!delta||scrollableParent(event.target,delta))return;
+  if(!delta)return;
   const now=performance.now(),gap=now-lastWheel;lastWheel=now;
+  if(scrollableParent(event.target,delta)){nativeWheel=true;return;}
+  // Reaching the top of the inner list does not turn its momentum into a home gesture.
+  if(nativeWheel&&gap<180){event.preventDefault();return;}
+  nativeWheel=false;
   // Swallow the rest of this gesture, including a trackpad's momentum tail.
   if(moving||(settling&&(gap<180||now<releaseAt))){event.preventDefault();return;}
   settling=false;
@@ -55,7 +59,7 @@ const sectionNavigation=(()=>{
  }
  addEventListener('wheel',wheel,{passive:false});
  document.addEventListener('touchstart',event=>{
-  if(event.touches.length!==1||dialogOpen()||editable(event.target)){touch=null;return;}
+  if(event.touches.length!==1||dialogOpen()||editable(event.target)||(!root.classList.contains('objects-motion-off')&&event.target instanceof Element&&event.target.closest('.stage-object'))){touch=null;return;}
   const p=event.touches[0];touch={x:p.clientX,y:p.clientY,startY:scrollY,lastY:p.clientY,mode:moving?'snapped':null};
   // A new finger contact is a new gesture, unlike wheel momentum.
   if(!moving)settling=false;
@@ -63,9 +67,10 @@ const sectionNavigation=(()=>{
  document.addEventListener('touchmove',event=>{
   if(!touch||event.touches.length!==1||dialogOpen())return;
   const p=event.touches[0],dx=p.clientX-touch.x,dy=touch.y-p.clientY,step=touch.lastY-p.clientY;touch.lastY=p.clientY;
-  if(touch.mode==='horizontal')return;
+  if(touch.mode==='horizontal'||touch.mode==='native')return;
   if(moving||touch.mode==='snapped'){if(event.cancelable)event.preventDefault();return;}
   if(!touch.mode){
+   if(scrollableParent(event.target,dy)){touch.mode='native';return;}
    if(Math.hypot(dx,dy)<14){
     // Reserve small vertical movements before the browser commits to native panning.
     const b=boundary(),towardSection=(touch.startY<b-2&&dy>0)||(touch.startY>1&&touch.startY<=b+2&&dy<0);
@@ -75,7 +80,7 @@ const sectionNavigation=(()=>{
    if(Math.abs(dx)>Math.abs(dy)){touch.mode='horizontal';return;}
    touch.mode='vertical';
   }
-  if(scrollableParent(event.target,dy))return;
+  if(scrollableParent(event.target,dy)){touch.mode='native';return;}
   const b=boundary();let to=null;
   if(touch.startY<b-2){if(dy>14)to='collection';else if(dy<-14&&touch.startY>1)to='top';}
   else if(touch.startY<=b+2&&dy<-14)to='top';
@@ -90,6 +95,7 @@ const sectionNavigation=(()=>{
   const down=event.key==='PageDown'||event.key==='ArrowDown'||(event.key===' '&&!event.shiftKey);
   const up=event.key==='PageUp'||event.key==='ArrowUp'||(event.key===' '&&event.shiftKey);
   if(!down&&!up)return;
+  if(scrollableParent(event.target,up?-1:1))return;
   if(moving){event.preventDefault();return;}
   if(down&&scrollY<boundary()-2){event.preventDefault();slide('collection',{focus:true});}
   else if(up&&scrollY>1&&scrollY<=boundary()+2){event.preventDefault();slide('top');}

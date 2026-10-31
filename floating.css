@@ -121,11 +121,13 @@ footer{padding-bottom:110px}
 .entry-body a{display:inline-block;max-width:100%;vertical-align:middle;line-height:1.5;padding:6px 12px;overflow-wrap:anywhere}
 .entry-body li{margin:8px 0;padding-left:3px}
 .stage-foot{display:flex;justify-content:flex-end}
-html.section-sliding{scroll-behavior:auto!important}
+html.section-sliding,html.collection-settling{scroll-behavior:auto!important}
 .collection{scroll-margin-top:0}
 .collection{padding-bottom:110px}
 .auto-load-ready #load-more{display:none}
-.collection-grid:not(.index-mode) .object-caption{scale:var(--caption-scale,1);transform-origin:left center;transition:scale .16s ease-out}
+.collection-grid:not(.index-mode) .object-caption{scale:var(--caption-scale,1);transform-origin:left center;transition:none}
+.collection-grid:not(.index-mode) .object-card.motion-visible{will-change:translate}
+.collection-grid:not(.index-mode) .motion-visible .object-caption{will-change:scale}
 @media(prefers-reduced-motion:reduce){.collection-grid:not(.index-mode) .object-caption{scale:1;transition:none}}
 .source-links:empty{display:none}
 .score-context{display:block;margin-top:4px;color:#737373;font-size:12px;line-height:1.6}
@@ -257,3 +259,90 @@ html.section-sliding{scroll-behavior:auto!important}
 
 /* Quiet metadata beside the personal score, driven by the Notion checkbox. */
 .legacy-badge{display:inline-flex;align-items:center;margin-left:8px;padding:3px 8px;border-radius:9999px;background:#e9dffa;color:#583585;font-size:11px;font-weight:500;line-height:1.2;vertical-align:middle;white-space:nowrap}
+
+/* Let the artwork travel independently in the dialog's top layer. */
+#detail-dialog.artwork-detail{animation:none!important;opacity:1;translate:none;scale:none;transform:none}
+#detail-dialog.artwork-opening{background-color:transparent;border-color:transparent}
+#detail-dialog.artwork-preparing::backdrop{background-color:transparent;backdrop-filter:none;animation:none!important}
+#detail-dialog.artwork-opening .dialog-close,#detail-dialog.artwork-opening .detail-body,
+#detail-dialog.artwork-opening .entry-body,#detail-dialog.artwork-opening .detail-disclaimer{opacity:0}
+#detail-dialog.artwork-closing{pointer-events:none;border-color:transparent}
+#detail-dialog.artwork-closing::backdrop{animation:panel-backdrop .42s ease reverse both}
+.artwork-flight-hidden{visibility:hidden!important}
+.detail-artwork-flight{position:fixed;left:0;top:0;z-index:5;max-width:none;max-height:none;object-fit:fill;transform-origin:center;pointer-events:none;will-change:transform;margin:0;border:0;border-radius:0}
+
+/* Local phone preview: four complete works in a compact two-by-two passage. */
+@media(max-width:540px){
+ .collection{padding:16px 16px 92px}
+ .collection-heading{padding-bottom:clamp(12px,calc(28svh - 175px),64px)}
+ .collection-heading h2{font-size:18px}
+ .collection-grid:not(.index-mode){--collection-cover-height:clamp(96px,17svh,156px);--collection-safe-bottom:env(safe-area-inset-bottom,0px);gap:20px 24px;padding:8px 0 var(--collection-tail-space,24px)}
+ .collection-grid:not(.index-mode) .object-card:nth-child(n){padding-top:0}
+ .collection-grid:not(.index-mode) .object-card:nth-child(even){padding-top:32px}
+ .collection-grid:not(.index-mode) .object-index{font-size:10px;line-height:1.4;margin-bottom:7px}
+ .collection-grid:not(.index-mode) .cover{height:var(--collection-cover-height)}
+ .collection-grid:not(.index-mode) .object-caption{margin-top:22px;gap:5px 6px;align-items:center}
+ .collection-grid:not(.index-mode) .object-title{font-size:13px;line-height:1.35;min-height:2.7em;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+ .collection-grid:not(.index-mode) .object-label{font-size:11px;line-height:1.3;padding:4px 7px}
+ .collection-grid:not(.index-mode) .object-rating{flex-basis:auto;margin-left:auto;font-size:11px;line-height:1.3;padding:4px 0}
+}
+
+/* A native scrolling window: artworks leave through its edges, never by hiding cards. */
+.collection-viewport{display:contents}
+@media(max-width:540px){
+ .collection-windowed .collection{height:var(--collection-page-height,100svh);padding:16px 16px 0;display:flex;flex-direction:column;overflow:clip}
+ .collection-windowed .collection-heading{flex:none;padding-bottom:20px}
+ .collection-windowed .collection-viewport{display:block;position:relative;min-height:0;flex:1;margin-inline:-16px;padding-inline:16px;overflow:auto;overflow-x:hidden;overflow-anchor:none;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+ .collection-windowed .collection-viewport::-webkit-scrollbar{display:none}
+ .collection-windowed .collection-viewport:focus-visible{outline:1px solid var(--ink);outline-offset:4px}
+ .collection-windowed .collection-grid{grid-auto-rows:minmax(var(--collection-row-height,220px),auto);padding:16px 0 var(--collection-tail-space,16px);row-gap:20px}
+ .collection-windowed .collection-grid .cover{height:min(var(--collection-cover-height),var(--collection-cover-limit,156px),max(48px,calc(var(--collection-row-height,220px) - 140px)))}
+ .collection-windowed .collection-grid .object-card{opacity:1;transition:none}
+ .collection-windowed.auto-load-ready .load-more-wrap{height:0;min-height:0;margin:0;overflow:hidden}
+}
+
+/* Separate collection scope from medium; reveal detailed ratings on demand. */
+.scope-options{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.scope-options .filter,.rating-filter{min-width:44px;min-height:44px}
+.rating-filters>summary,.tracklist>summary{cursor:pointer;min-height:44px;padding:12px 0;line-height:1.5;font-size:14px;font-weight:500;overflow-wrap:anywhere}
+.rating-filters[open]>summary{margin-bottom:12px}
+.rating-options{gap:8px}
+#rating-clear{min-height:44px;margin-top:12px}
+.tracklist{margin-block:24px;border-block:1px solid var(--plate)}
+.entry-body:has(>.tracklist:first-child){border-top:0;padding-top:0}
+.entry-body>.tracklist:first-child{margin-top:0}
+.tracklist>summary:focus-visible,.rating-filters>summary:focus-visible{outline:2px solid var(--ink);outline-offset:4px}
+.tracklist[open]>summary{margin-bottom:12px}
+
+@media(max-width:540px) and (max-height:740px){
+ .collection-windowed .collection-grid .object-caption{margin-top:14px}
+}
+
+/* The same edge-to-edge collection window on desktop and tablet. */
+@media(min-width:541px){
+ .collection-windowed .collection{height:var(--collection-page-height,100svh);padding:24px 28px 0;display:flex;flex-direction:column;overflow:clip}
+ .collection-windowed .collection-heading{flex:none;padding-bottom:24px}
+ .collection-windowed .collection-viewport{display:block;position:relative;min-height:0;flex:1;margin-inline:-28px;padding-inline:28px;overflow:auto;overflow-x:hidden;overflow-anchor:none;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+ .collection-windowed .collection-viewport::-webkit-scrollbar{display:none}
+ .collection-windowed .collection-viewport:focus-visible{outline:1px solid var(--ink);outline-offset:4px}
+ .collection-windowed .collection-grid{--collection-cover-height:clamp(160px,32vh,340px);--collection-safe-bottom:env(safe-area-inset-bottom,0px);grid-template-columns:repeat(4,minmax(0,1fr));grid-auto-rows:minmax(var(--collection-row-height,600px),auto);padding:16px 0 var(--collection-tail-space,16px);column-gap:4%;row-gap:20px}
+ .collection-windowed .collection-grid .object-card{grid-column:auto;opacity:1;transition:none}
+ .collection-windowed .collection-grid .object-card:nth-child(n){padding-top:clamp(16px,6vh,72px)}
+ .collection-windowed .collection-grid .object-card:nth-child(4n+2){padding-top:calc(clamp(16px,6vh,72px) + 80px)}
+ .collection-windowed .collection-grid .object-card:nth-child(4n+3){padding-top:calc(clamp(16px,6vh,72px) + 24px)}
+ .collection-windowed .collection-grid .object-card:nth-child(4n){padding-top:calc(clamp(16px,6vh,72px) + 104px)}
+ .collection-windowed .collection-grid .cover{height:min(var(--collection-cover-height),var(--collection-cover-limit,340px))}
+ .collection-windowed .collection-grid .object-title{min-height:2.86em;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+ .collection-windowed .collection-grid .object-rating{flex-basis:auto;margin-left:auto}
+ .collection-windowed.auto-load-ready .load-more-wrap{height:0;min-height:0;margin:0;overflow:hidden}
+}
+@media(min-width:541px) and (max-width:900px){
+ .collection-windowed .collection{padding-top:20px}
+ .collection-windowed .collection-grid{--collection-cover-height:clamp(100px,20vh,200px);grid-template-columns:repeat(2,minmax(0,1fr));column-gap:7%}
+ .collection-windowed .collection-grid .object-card:nth-child(n){padding-top:0;--entry-x:-56px;--entry-y:24px}
+ .collection-windowed .collection-grid .object-card:nth-child(even){padding-top:32px;--entry-x:56px}
+ .collection-windowed .collection-grid .object-caption{margin-top:20px}
+}
+
+/* A work can be pulled in any direction; the empty canvas still scrolls vertically. */
+.objects-motion-ready:not(.objects-motion-off) .stage-object{touch-action:pinch-zoom}
