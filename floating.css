@@ -45,7 +45,12 @@ html{scrollbar-gutter:stable;scroll-behavior:smooth}
 .wordmark-face-alt{transform:rotateX(180deg) translateZ(10px)}
 .objects-motion-suspended .wordmark-rotor{animation-play-state:paused}
 @keyframes wordmark-turn{0%,40%{transform:rotateX(0deg)}50%,90%{transform:rotateX(-180deg)}100%{transform:rotateX(-360deg)}}
-@media(prefers-reduced-motion:reduce){.wordmark-rotor{animation:none;transform:none}.wordmark-face{transform:none}.wordmark-face-alt{display:none}}
+/* Each side is its own link; keyboard focus brings its label to the front. */
+.wordmark-face-alt:hover{text-decoration:underline;text-underline-offset:3px}
+.wordmark-rotor:has(.wordmark-face:focus-visible){animation:none;transform:rotateX(0deg)}
+.wordmark-rotor:has(.wordmark-face-alt:focus-visible){transform:rotateX(-180deg)}
+.wordmark-face:focus-visible{outline:1px solid var(--ink);outline-offset:3px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){.central-nav .wordmark{padding:0}.wordmark-window{height:auto;perspective:none}.wordmark-rotor,.wordmark-rotor:has(.wordmark-face:focus-visible){animation:none;transform:none;gap:4px;transform-style:flat}.wordmark-face{grid-area:auto;transform:none;font-size:12px;line-height:20px}.wordmark-face-alt{display:block}}
 button,a{touch-action:manipulation}
 .menu-trigger,.neutral-link,.pill,.dialog-close,.filter,.view-controls button,.view-results,.motion-control{min-height:44px;transition:scale .12s ease,background-color .16s ease,color .16s ease,opacity .16s ease}
 .menu-trigger:active,.neutral-link:active,.pill:active,.dialog-close:active,.filter:active,.view-controls button:active,.view-results:active,.motion-control:active{scale:.95}
