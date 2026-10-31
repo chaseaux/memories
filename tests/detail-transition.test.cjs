@@ -11,8 +11,12 @@ function setup(options={}){
   getBoundingClientRect(){return {...this.rect,right:this.rect.left+this.rect.width,bottom:this.rect.top+this.rect.height};}
   setAttribute(){}
   removeAttribute(name){if(name==='style')this.style={};}
-  cloneNode(){
-   const clone=new Element({...this.rect});clone.naturalWidth=this.naturalWidth;clone.naturalHeight=this.naturalHeight;clone.src=this.src;clone.currentSrc=this.currentSrc;
+  querySelector(selector){return this.parts?.[selector]||null;}
+  querySelectorAll(selector){return selector==='*'?Object.values(this.parts||{}):[];}
+  append(...nodes){for(const node of nodes)node.parentElement=this;}
+  cloneNode(deep=false){
+   const clone=new Element({...this.rect});clone.naturalWidth=this.naturalWidth;clone.naturalHeight=this.naturalHeight;clone.src=this.src;clone.currentSrc=this.currentSrc;clone.style={...this.style};clone.className=this.className||'';
+   if(deep&&this.parts){clone.parts={};for(const [key,node]of Object.entries(this.parts))clone.parts[key]=node.cloneNode(false);}
    if(options.delayedDecode)clone.decode=()=>new Promise((resolve,reject)=>{clone.resolveDecode=resolve;clone.rejectDecode=reject;});
    return clone;
   }
@@ -25,21 +29,28 @@ function setup(options={}){
  const targetImage=new Element({left:70,top:80,width:240,height:240});
  const button=new Element(),dialog=new Element({left:16,top:16,width:343,height:635}),body=new Element(),grid=new Element();
  sourceImage.parentElement=button;button.parentElement=grid;
- button.closest=()=>options.hero?null:grid;button.querySelector=()=>options.missing?null:sourceImage;
+ const stage=new Element({left:0,top:0,width:375,height:667});stage.style.perspective='700px';stage.style.perspectiveOrigin='187.5px 333.5px';
+ if(options.hero){
+  button.style.transform='matrix3d(1,0,0,0,0,1,0,0,0,0,1,0,40,20,100,1)';button.parentElement=stage;
+  button.parts={'.floating-art':new Element(),'.object-face':new Element(),'.object-face img':sourceImage};
+ }
+ button.closest=selector=>options.hero?(selector==='.stage-object'?button:selector==='#stage-objects'?stage:null):grid;
+ button.querySelector=selector=>options.missing?null:options.hero?button.parts[selector]||null:sourceImage;
  dialog.querySelector=()=>targetImage;dialog.querySelectorAll=()=>[body];
  dialog.append=clone=>{clone.parentElement=dialog;clones.push(clone);};
  const reduced={matches:!!options.reduced,addEventListener(name,callback){this.changed=callback;}};
  const on=(name,callback)=>(events[name]??=[]).push(callback);
  const document={hidden:false,addEventListener:on,createElement(){return new Element({left:70,top:80,width:240,height:240});}};
- const context={document,Element,innerWidth:375,innerHeight:667,scrollY:667,scrollX:0,performance:{now:()=>now},matchMedia:()=>reduced,addEventListener:on,getComputedStyle:node=>({transform:'none',scale:'none',rotate:'none',backgroundColor:'#f4f4f4',opacity:'1',...node.style}),DOMMatrixReadOnly:class{constructor(){this.a=1;this.b=0;this.is2D=true;}}};
+ const context={document,Element,innerWidth:375,innerHeight:667,scrollY:options.hero?0:667,scrollX:0,performance:{now:()=>now},matchMedia:()=>reduced,addEventListener:on,getComputedStyle:node=>({transform:'none',scale:'none',rotate:'none',backgroundColor:'#f4f4f4',opacity:'1',...node.style}),DOMMatrixReadOnly:class{constructor(){this.a=1;this.b=0;this.is2D=true;}}};
  context.scrollTo=position=>{context.scrollY=position.top;context.scrollX=position.left;};
  context.requestAnimationFrame=callback=>{frames.set(++frameId,callback);return frameId;};context.cancelAnimationFrame=id=>frames.delete(id);
  context.window=context;context.visualViewport={addEventListener(){}};
  const api=vm.runInNewContext(source+';detailArtworkTransition',context);
  const reveal=()=>{dialog.open=true;if(options.focusJump)context.scrollY=478;};
- const live=()=>clones.filter(c=>c.isConnected);
- const flight=()=>animations.filter(a=>a.element===live()[0]).at(-1);
- return {api,dialog,sourceImage,targetImage,button,animations,live,flight,reduced,document,context,open:()=>api.open(dialog,button,reveal),event:name=>(events[name]||[]).forEach(callback=>callback()),advance(ms){now+=ms;const callbacks=[...frames.values()];frames.clear();callbacks.forEach(callback=>callback(now));}};
+ const live=()=>clones.filter(c=>c.isConnected&&c.className==='detail-artwork-flight');
+ const scenes=()=>clones.filter(c=>c.isConnected&&c.className==='detail-object-scene');
+ const flight=()=>animations.filter(a=>a.element===live()[0]&&a.frames.some(frame=>frame.transform)).at(-1);
+ return {api,dialog,sourceImage,targetImage,button,animations,live,scenes,flight,reduced,document,context,open:()=>api.open(dialog,button,reveal),event:name=>(events[name]||[]).forEach(callback=>callback()),advance(ms){now+=ms;const callbacks=[...frames.values()];frames.clear();callbacks.forEach(callback=>callback(now));}};
 }
 const flush=async()=>{await Promise.resolve();await Promise.resolve();};
 test('the artwork grows from the real card with its tilt and natural proportions',()=>{
@@ -74,8 +85,8 @@ test('a toolbar resize retargets opening without cutting it short and closing st
  assert.equal(t.flight().settings.duration,324);t.flight().finish();await flush();assert.equal(t.live().length,0);
  let finishes=0;const close=t.api.leave(t.dialog,()=>finishes++);t.event('resize');await close;assert.equal(finishes,1);assert.equal(t.live().length,0);
 });
-test('reduced motion, missing artwork, hero objects and unloaded pictures retain the normal dialog',()=>{
- for(const options of [{reduced:true},{missing:true},{hero:true},{unloaded:true},{unsupported:true}]){
+test('reduced motion, missing artwork and unloaded pictures retain the normal dialog',()=>{
+ for(const options of [{reduced:true},{missing:true},{unloaded:true},{unsupported:true}]){
   const t=setup(options);if(options.unloaded)t.sourceImage.complete=false;if(options.unsupported)t.sourceImage.animate=undefined;
   t.open();assert(t.dialog.open);assert.equal(t.live().length,0);assert(!t.dialog.classList.contains('artwork-detail'));
  }
@@ -131,4 +142,33 @@ test('closing before decode finishes cannot reopen or leave an invisible card',a
 test('decode failure leaves a usable detail dialog without a blank floating image',async()=>{
  const t=setup({delayedDecode:true});t.open();t.live()[0].rejectDecode(Error('decode failed'));await flush();
  assert.equal(t.live().length,0);assert(t.dialog.open);assert(!t.targetImage.classList.contains('artwork-flight-hidden'));assert(!t.dialog.classList.contains('artwork-preparing'));
+});
+
+test('a 3D hero work lifts intact toward the viewer before becoming the detail image',async()=>{
+ const t=setup({hero:true});t.open();assert.equal(t.live().length,1);assert.equal(t.scenes().length,1);
+ assert(t.button.classList.contains('artwork-flight-hidden'));assert(!t.sourceImage.classList.contains('artwork-flight-hidden'));
+ const flight=t.flight();assert.equal(flight.settings.duration,700);assert.equal(flight.frames.length,3);assert.equal(flight.frames[1].offset,.38);
+ assert(t.animations.some(a=>a.element.classList?.contains('detail-object-flight')));
+ flight.finish();await flush();assert.equal(t.scenes().length,0);assert.equal(t.live().length,0);assert(!t.targetImage.classList.contains('artwork-flight-hidden'));
+});
+test('hero transitions preserve the existing simple close and restore the complete original object',async()=>{
+ const t=setup({hero:true});t.open();t.flight().finish();await flush();assert.equal(t.api.leave(t.dialog,()=>{}),null);
+ assert(!t.button.classList.contains('artwork-flight-hidden'));assert.equal(t.scenes().length,0);assert.equal(t.live().length,0);
+});
+test('closing a hero while decoding removes the material copy and never starts a later flight',async()=>{
+ const t=setup({hero:true,delayedDecode:true});t.open();const clone=t.live()[0];assert.equal(t.scenes().length,1);assert(!t.button.classList.contains('artwork-flight-hidden'));
+ assert.equal(t.api.leave(t.dialog,()=>{}),null);clone.resolveDecode();await flush();assert.equal(t.scenes().length,0);assert.equal(t.live().length,0);assert.equal(t.animations.length,0);
+});
+test('a phone resize retargets a hero flight to the new image while cleaning up the material layer',async()=>{
+ const t=setup({hero:true});t.open();const initial=t.flight();t.advance(200);t.targetImage.rect.top+=50;t.event('resize');t.advance(16);await flush();
+ assert(initial.cancelled);assert.equal(t.flight().settings.duration,484);t.flight().finish();await flush();assert.equal(t.scenes().length,0);assert.equal(t.live().length,0);
+});
+test('hero decode failure leaves a usable detail image and no hidden original artifact',async()=>{
+ const t=setup({hero:true,delayedDecode:true});t.open();t.live()[0].rejectDecode(Error('decode failed'));await flush();
+ assert.equal(t.scenes().length,0);assert.equal(t.live().length,0);assert(!t.button.classList.contains('artwork-flight-hidden'));assert(!t.targetImage.classList.contains('artwork-flight-hidden'));assert(t.dialog.open);
+});
+
+test('the initial dialog scroll reset does not flatten or shorten the hero approach',async()=>{
+ const t=setup({hero:true});t.open();const flight=t.flight();t.dialog.scrollTop=0;t.dialog.events.scroll();t.advance(16);await flush();
+ assert.equal(t.flight(),flight);assert(!flight.cancelled);assert.equal(flight.frames.length,3);
 });

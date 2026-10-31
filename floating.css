@@ -346,3 +346,9 @@ html.section-sliding,html.collection-settling{scroll-behavior:auto!important}
 
 /* A work can be pulled in any direction; the empty canvas still scrolls vertically. */
 .objects-motion-ready:not(.objects-motion-off) .stage-object{touch-action:pinch-zoom}
+
+/* Lift the selected 3D artifact intact, then hand its image to the reading view. */
+.detail-object-scene{position:fixed;pointer-events:none;z-index:5;overflow:visible;transform-style:flat}
+.detail-object-scene .detail-object-flight{pointer-events:none;margin:0;opacity:1;animation:none;transition:none}
+.detail-object-flight .stage-label{display:none!important}
+#detail-dialog.artwork-detail>.detail-artwork-flight{z-index:6}
