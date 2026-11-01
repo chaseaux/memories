@@ -307,7 +307,9 @@ html.section-sliding,html.collection-settling{scroll-behavior:auto!important}
 }
 
 /* Separate collection scope from medium; reveal detailed ratings on demand. */
-.scope-options{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.scope-options{display:flex;flex-wrap:wrap;gap:8px}
+.filter-help{font-size:12px;line-height:1.5;margin-top:8px;overflow-wrap:anywhere}
+#scope-help{margin-bottom:20px}
 .scope-options .filter,.rating-filter{min-width:44px;min-height:44px}
 .rating-filters>summary,.tracklist>summary{cursor:pointer;min-height:44px;padding:12px 0;line-height:1.5;font-size:14px;font-weight:500;overflow-wrap:anywhere}
 .rating-filters[open]>summary{margin-bottom:12px}

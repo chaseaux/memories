@@ -4,16 +4,17 @@ const entries=ARCHIVE.entries.map(e=>({...e,pageTitle:e.title,title:e.category==
 const activeFilters=new Set();
 const activeRatings=new Set();
 let collectionScope='collection';
+const filterHelp={collection:'Current records.',legacy:'Earlier records kept in a separate archive.',both:'All current and legacy records.',goat:'GOAT marks all-time favourites.'};
 let displayLimit=12;
 // Legacy is an explicit Notion checkbox, independent of all dates.
 function isLegacy(e){
  return e.legacy===true;
 }
-function matchesCollectionFilter(e,selected=activeFilters){
- return (collectionScope==='both'||isLegacy(e)===(collectionScope==='legacy'))&&(!selected.size||selected.has(e.category));
+function matchesCollectionFilter(e,selected=activeFilters,scope=collectionScope){
+ return (scope==='both'||isLegacy(e)===(scope==='legacy'))&&(!selected.size||selected.has(e.category));
 }
 function matchesRating(e,selected=activeRatings){
- if(!selected.size)return true;
+ if(!selected.size)return typeof e.rating==='number';
  if(typeof e.rating!=='number')return selected.has('unrated');
  if(selected.has('goat')&&e.hallOfFame)return true;
  return typeof e.rating==='number'&&selected.has(`score-${e.rating}`);
@@ -24,11 +25,12 @@ function updateRatingButtons(){
   const selected=activeRatings.has(b.dataset.rating);b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));
  });
  const summary=panel.querySelector('#rating-summary');
- if(summary)summary.textContent=activeRatings.size?[...activeRatings].map(v=>v==='goat'?'GOAT':v==='unrated'?'Unrated':v.slice(6)).join(', '):'Any';
+ if(summary)summary.textContent=activeRatings.size?[...activeRatings].map(v=>v==='goat'?'GOAT':v==='unrated'?'Unrated':v.slice(6)).join(', '):'Rated';
  const clear=panel.querySelector('#rating-clear');if(clear)clear.hidden=!activeRatings.size;
 }
 function initRatingFilters(){
  const panel=document.querySelector('#rating-filters');if(!panel)return;
+ const help=panel.querySelector('#goat-help');if(help)help.textContent=filterHelp.goat;
  panel.querySelector('[data-rating-group="score"] .rating-options').innerHTML=Array.from({length:11},(_,i)=>10-i).map(n=>`<button class="rating-filter" data-rating="score-${n}" aria-pressed="false" aria-label="${n} out of 10">${n}</button>`).join('');
  panel.addEventListener('click',event=>{
   if(event.target.closest('#rating-clear')){activeRatings.clear();displayLimit=12;updateFilterButtons();updateRatingButtons();render();return;}
@@ -41,6 +43,7 @@ function initRatingFilters(){
 let autoMoreObserver=null,autoMoreFrame=0;
 const escapeHTML=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const isJapanese=v=>/[\u3040-\u30ff\u3400-\u9fff]/.test(v);
+const jaLang=v=>v&&isJapanese(v)?' lang="ja"':'';
 const pad=v=>String(v).padStart(2,'0');
 const formatDate=v=>v?v.slice(0,10).replaceAll('-','.'):'UNDATED';
 const categoryNames={'all':'All media','映画':'Cinema','音楽':'Music','アート':'Art','舞台・ライブ':'Live','建築':'Architecture','ゲーム':'Games','本':'Books','その他':'Other'};
@@ -147,7 +150,10 @@ function resetCollectionFilters(){
 function updateFilterButtons(){
  document.querySelectorAll('[data-scope]').forEach(button=>{
   const selected=button.dataset.scope===collectionScope;button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));
+  const count=entries.filter(e=>matchesRating(e)&&matchesCollectionFilter(e,activeFilters,button.dataset.scope)).length;
+  button.querySelector('sup').textContent=pad(count);
  });
+ const help=document.querySelector('#scope-help');if(help&&help.textContent!==filterHelp[collectionScope])help.textContent=filterHelp[collectionScope];
  filters.querySelectorAll('[data-filter]').forEach(button=>{
   const key=button.dataset.filter,selected=key==='all'?activeFilters.size===0:activeFilters.has(key);
   button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));
@@ -241,7 +247,7 @@ function showEntry(id,button=null){
  const checkedOn=reviewFacts.filter(([k])=>k==='SCORES CHECKED ON').map(([,v])=>v);
  facts.push(...reviewFacts.filter(([k])=>k!=='SCORES CHECKED ON'));
  const scoreContext=checkedOn.length?`<span class="score-context">Checked ${checkedOn.map(v=>escapeHTML(formatDate(v))).join(', ')}. Scores may change.</span>`:'';
- document.querySelector('#detail-content').innerHTML=`<div class="detail-layout"><div class="detail-visual">${coverMarkup(e,true)}</div><div class="detail-body"><h2 id="detail-title" class="${isJapanese(e.title)?'jp':''}">${escapeHTML(e.title)}</h2>${e.originalTitle?.trim() && e.originalTitle.trim()!==e.title?`<p class="original-title">${escapeHTML(e.originalTitle)}</p>`:''}<p class="detail-creator">${escapeHTML(e.creator||'Creator unrecorded')}</p><div class="detail-tags">${e.tags.map(t=>`<span>${escapeHTML(t)}</span>`).join('')}</div><p class="detail-note${e.note?'':' note-empty'}">${e.note?escapeHTML(e.note):'No note has been recorded yet.'}</p><dl class="detail-facts">${facts.map(([k,v])=>`<div><dt>${escapeHTML(k)}</dt><dd>${escapeHTML(v)}${k==='PERSONAL RATING'&&isLegacy(e)?'<span class="legacy-badge">Legacy</span>':''}</dd></div>`).join('')}</dl><div class="source-links">${links.map(([k,u])=>`<a href="${escapeHTML(safeURL(u))}" target="_blank" rel="noopener noreferrer">${k==='リンク'?'Listen online':escapeHTML(k)} ↗</a>`).join('')}</div></div></div><section class="entry-body">${body?renderMarkdown(body):'<p class="note-empty">This record has no written entry yet.</p>'}</section><p class="detail-disclaimer"><a href="${escapeHTML(safeURL(e.url))}" target="_blank" rel="noopener noreferrer">Open original in Notion</a>${scoreContext}</p>`;
+ document.querySelector('#detail-content').innerHTML=`<div class="detail-layout"><div class="detail-visual">${coverMarkup(e,true)}</div><div class="detail-body"><h2 id="detail-title" class="${isJapanese(e.title)?'jp':''}"${jaLang(e.title)}>${escapeHTML(e.title)}</h2>${e.originalTitle?.trim() && e.originalTitle.trim()!==e.title?`<p class="original-title"${jaLang(e.originalTitle)}>${escapeHTML(e.originalTitle)}</p>`:''}<p class="detail-creator"${jaLang(e.creator)}>${escapeHTML(e.creator||'Creator unrecorded')}</p><div class="detail-tags">${e.tags.map(t=>`<span>${escapeHTML(t)}</span>`).join('')}</div><p class="detail-note${e.note?'':' note-empty'}"${jaLang(e.note)}>${e.note?escapeHTML(e.note):'No note has been recorded yet.'}</p><dl class="detail-facts">${facts.map(([k,v])=>`<div><dt>${escapeHTML(k)}</dt><dd>${escapeHTML(v)}${k==='PERSONAL RATING'&&isLegacy(e)?'<span class="legacy-badge">Legacy</span>':''}</dd></div>`).join('')}</dl><div class="source-links">${links.map(([k,u])=>`<a href="${escapeHTML(safeURL(u))}" target="_blank" rel="noopener noreferrer">${k==='リンク'?'Listen online':escapeHTML(k)} ↗</a>`).join('')}</div></div></div><section class="entry-body"${jaLang(body)}>${body?renderMarkdown(body):'<p class="note-empty">This record has no written entry yet.</p>'}</section><p class="detail-disclaimer"><a href="${escapeHTML(safeURL(e.url))}" target="_blank" rel="noopener noreferrer">Open original in Notion</a>${scoreContext}</p>`;
  const reveal=()=>openArchiveDialog(detailDialog,button);
  if(floatingEdition&&typeof detailArtworkTransition!=='undefined')detailArtworkTransition.open(detailDialog,button,reveal);
  else reveal();
