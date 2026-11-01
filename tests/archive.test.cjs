@@ -21,6 +21,27 @@ test('media filters combine independently from Collection, Legacy and Both scope
  context.collectionScope='collection';
 });
 
+test('scope counts follow active media and ratings and update the selected scope help',()=>{
+ const button=scope=>({dataset:{scope},classList:{toggle(){}},setAttribute(key,value){this[key]=value;},count:{textContent:''},querySelector(){return this.count;}});
+ const buttons=['collection','legacy','both'].map(button),help={textContent:''};
+ const local=vm.createContext({collectionScope:'collection',activeFilters:select(),activeRatings:select(),entries:[
+  {category:'Cinema',rating:9},{category:'Cinema',legacy:true,rating:9,hallOfFame:true},
+  {category:'Music',rating:8,hallOfFame:true},{category:'Music',legacy:true,rating:null}
+ ],pad:v=>String(v).padStart(2,'0'),filters:{querySelectorAll:()=>[]},document:{querySelectorAll:()=>buttons,querySelector:()=>help}});
+ vm.runInContext(source.match(/const filterHelp=.+;/)[0],local);
+ vm.runInContext(source.slice(source.indexOf('function isLegacy'),source.indexOf('function updateRatingButtons')),local);
+ vm.runInContext(source.slice(source.indexOf('function updateFilterButtons'),source.indexOf('function cardMarkup')),local);
+ const counts=()=>buttons.map(b=>b.count.textContent);
+ local.updateFilterButtons();assert.deepEqual(counts(),['02','02','04']);assert.equal(help.textContent,'Current records.');
+ local.activeFilters=select('Cinema');local.updateFilterButtons();assert.deepEqual(counts(),['01','01','02']);
+ local.activeRatings=select('goat');local.collectionScope='legacy';local.updateFilterButtons();
+ assert.deepEqual(counts(),['00','01','01']);assert.equal(help.textContent,'Earlier records kept in a separate archive.');
+ assert.equal(buttons[1]['aria-pressed'],'true');assert.equal(buttons[0]['aria-pressed'],'false');
+ local.activeFilters.clear();local.activeRatings=select('score-8','score-9');local.collectionScope='both';local.updateFilterButtons();
+ assert.deepEqual(counts(),['02','01','03']);assert.equal(help.textContent,'All current and legacy records.');
+ local.activeRatings.clear();local.updateFilterButtons();assert.deepEqual(counts(),['02','02','04']);
+});
+
 test('scores and GOAT combine for every source, preserving zero versus missing',()=>{
  for(const source of ['movies','games','books','art','live','arch','music']){
   assert(context.matchesRating({source,rating:8},select('score-8','score-9')));

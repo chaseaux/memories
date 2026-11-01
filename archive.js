@@ -4,13 +4,14 @@ const entries=ARCHIVE.entries.map(e=>({...e,pageTitle:e.title,title:e.category==
 const activeFilters=new Set();
 const activeRatings=new Set();
 let collectionScope='collection';
+const filterHelp={collection:'Current records.',legacy:'Earlier records kept in a separate archive.',both:'All current and legacy records.',goat:'GOAT marks all-time favourites.'};
 let displayLimit=12;
 // Legacy is an explicit Notion checkbox, independent of all dates.
 function isLegacy(e){
  return e.legacy===true;
 }
-function matchesCollectionFilter(e,selected=activeFilters){
- return (collectionScope==='both'||isLegacy(e)===(collectionScope==='legacy'))&&(!selected.size||selected.has(e.category));
+function matchesCollectionFilter(e,selected=activeFilters,scope=collectionScope){
+ return (scope==='both'||isLegacy(e)===(scope==='legacy'))&&(!selected.size||selected.has(e.category));
 }
 function matchesRating(e,selected=activeRatings){
  if(!selected.size)return true;
@@ -29,6 +30,7 @@ function updateRatingButtons(){
 }
 function initRatingFilters(){
  const panel=document.querySelector('#rating-filters');if(!panel)return;
+ const help=panel.querySelector('#goat-help');if(help)help.textContent=filterHelp.goat;
  panel.querySelector('[data-rating-group="score"] .rating-options').innerHTML=Array.from({length:11},(_,i)=>10-i).map(n=>`<button class="rating-filter" data-rating="score-${n}" aria-pressed="false" aria-label="${n} out of 10">${n}</button>`).join('');
  panel.addEventListener('click',event=>{
   if(event.target.closest('#rating-clear')){activeRatings.clear();displayLimit=12;updateFilterButtons();updateRatingButtons();render();return;}
@@ -147,7 +149,10 @@ function resetCollectionFilters(){
 function updateFilterButtons(){
  document.querySelectorAll('[data-scope]').forEach(button=>{
   const selected=button.dataset.scope===collectionScope;button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));
+  const count=entries.filter(e=>matchesRating(e)&&matchesCollectionFilter(e,activeFilters,button.dataset.scope)).length;
+  button.querySelector('sup').textContent=pad(count);
  });
+ const help=document.querySelector('#scope-help');if(help&&help.textContent!==filterHelp[collectionScope])help.textContent=filterHelp[collectionScope];
  filters.querySelectorAll('[data-filter]').forEach(button=>{
   const key=button.dataset.filter,selected=key==='all'?activeFilters.size===0:activeFilters.has(key);
   button.classList.toggle('active',selected);button.setAttribute('aria-pressed',String(selected));

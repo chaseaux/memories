@@ -30,11 +30,13 @@
  <dialog id="menu-dialog" class="menu-dialog" aria-labelledby="menu-title">
   <div class="panel-heading"><h2 id="menu-title">Menu</h2><button class="dialog-close" aria-label="Close menu">Close ×</button></div>
   <label class="search"><span>Search</span><input id="search" type="search" placeholder="Title, artist, or note" aria-label="Search titles, creators, and notes" enterkeyhint="search"></label>
-  <div id="collection-scope" class="scope-options" role="group" aria-label="Collection scope"><button class="filter active" data-scope="collection" aria-pressed="true">Collection</button><button class="filter" data-scope="legacy" aria-pressed="false">Legacy</button><button class="filter" data-scope="both" aria-pressed="false">Both</button></div>
+  <div id="collection-scope" class="scope-options" role="group" aria-label="Collection scope" aria-describedby="scope-help"><button class="filter active" data-scope="collection" aria-pressed="true">Collection <sup></sup></button><button class="filter" data-scope="legacy" aria-pressed="false">Legacy <sup></sup></button><button class="filter" data-scope="both" aria-pressed="false">Both <sup></sup></button></div>
+  <p id="scope-help" class="filter-help" aria-live="polite" aria-atomic="true"></p>
   <div class="filters" role="group" aria-label="Filter by medium"></div>
   <details id="rating-filters" class="rating-filters">
    <summary>Rating · <span id="rating-summary">Any</span></summary>
-   <div class="rating-options" role="group" aria-label="Special ratings"><button class="rating-filter" data-rating="goat" aria-pressed="false">GOAT</button><button class="rating-filter" data-rating="unrated" aria-pressed="false">Unrated</button></div>
+   <div class="rating-options" role="group" aria-label="Special ratings"><button class="rating-filter" data-rating="goat" aria-pressed="false" aria-describedby="goat-help">GOAT</button><button class="rating-filter" data-rating="unrated" aria-pressed="false">Unrated</button></div>
+   <p id="goat-help" class="filter-help"></p>
    <div class="rating-group" data-rating-group="score"><h4>Score · / 10</h4><div class="rating-options" role="group" aria-label="Scores out of ten"></div></div>
    <button id="rating-clear" class="neutral-link" hidden>Clear rating</button>
   </details>
