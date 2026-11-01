@@ -14,7 +14,7 @@ function matchesCollectionFilter(e,selected=activeFilters,scope=collectionScope)
  return (scope==='both'||isLegacy(e)===(scope==='legacy'))&&(!selected.size||selected.has(e.category));
 }
 function matchesRating(e,selected=activeRatings){
- if(!selected.size)return true;
+ if(!selected.size)return typeof e.rating==='number';
  if(typeof e.rating!=='number')return selected.has('unrated');
  if(selected.has('goat')&&e.hallOfFame)return true;
  return typeof e.rating==='number'&&selected.has(`score-${e.rating}`);
@@ -25,7 +25,7 @@ function updateRatingButtons(){
   const selected=activeRatings.has(b.dataset.rating);b.classList.toggle('active',selected);b.setAttribute('aria-pressed',String(selected));
  });
  const summary=panel.querySelector('#rating-summary');
- if(summary)summary.textContent=activeRatings.size?[...activeRatings].map(v=>v==='goat'?'GOAT':v==='unrated'?'Unrated':v.slice(6)).join(', '):'Any';
+ if(summary)summary.textContent=activeRatings.size?[...activeRatings].map(v=>v==='goat'?'GOAT':v==='unrated'?'Unrated':v.slice(6)).join(', '):'Rated';
  const clear=panel.querySelector('#rating-clear');if(clear)clear.hidden=!activeRatings.size;
 }
 function initRatingFilters(){
