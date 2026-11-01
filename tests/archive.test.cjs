@@ -65,3 +65,124 @@ test('unrated entries can be isolated or combined with scores, including zero',(
  }
  assert(context.matchesRating({rating:8},select('unrated','score-8')));
 });
+
+// Run the complete script against distinct, selector-aware nodes and dispatch
+// bubbling events so these checks cover the public controls and their wiring.
+function archiveDOM(){
+ class Element{
+  constructor({id='',className='',dataset={}}={}){
+   this.id=id;this.dataset=dataset;this.children=[];this.parentElement=null;
+   this.textContent='';this.value='';this.attributes={};this.listeners={};
+   const classes=new Set(className.split(' ').filter(Boolean));
+   this.classList={contains:v=>classes.has(v),toggle(v,on){if(on)classes.add(v);else classes.delete(v);}};
+  }
+  append(child){child.parentElement=this;this.children.push(child);return child;}
+  matches(selector){
+   if(selector.startsWith('#'))return this.id===selector.slice(1);
+   if(selector.startsWith('.'))return this.classList.contains(selector.slice(1));
+   const data=selector.match(/^\[data-([\w-]+)(?:="([^"]+)")?\]$/);
+   if(data){const key=data[1].replace(/-([a-z])/g,(_,c)=>c.toUpperCase());return key in this.dataset&&(data[2]===undefined||this.dataset[key]===data[2]);}
+   return this.tagName===selector.toUpperCase();
+  }
+  querySelectorAll(selector){
+   const parts=selector.split(' '),last=parts.pop(),found=[];
+   const visit=node=>{for(const child of node.children){
+    if(child.matches(last)){
+     let ancestor=child.parentElement,index=parts.length-1;
+     while(ancestor&&index>=0){if(ancestor.matches(parts[index]))index--;ancestor=ancestor.parentElement;}
+     if(index<0)found.push(child);
+    }
+    visit(child);
+   }};
+   visit(this);return found;
+  }
+  querySelector(selector){return this.querySelectorAll(selector)[0]||null;}
+  closest(selector){return this.matches(selector)?this:this.parentElement?.closest(selector)||null;}
+  setAttribute(key,value){this.attributes[key]=String(value);}
+  getAttribute(key){return this.attributes[key]??null;}
+  addEventListener(type,listener){(this.listeners[type]??=[]).push(listener);}
+  dispatchEvent(event){if(!event.target)event.target=this;for(const listener of this.listeners[event.type]||[])listener(event);if(event.bubbles)this.parentElement?.dispatchEvent(event);}
+  click(){this.dispatchEvent({type:'click',bubbles:true});}
+  focus(){document.activeElement=this;}
+  set innerHTML(html){
+   this.children=[];
+   // Only filter containers need generated children for these interactions.
+   if(!this.classList.contains('filters')&&!this.classList.contains('rating-options'))return;
+   for(const match of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)){
+    const dataset={};for(const [,key,value]of match[1].matchAll(/data-([\w]+)="([^"]*)"/g))dataset[key]=value;
+    const button=this.append(new Element({dataset}));button.tagName='BUTTON';
+    button.setAttribute('aria-pressed','false');
+    if(match[2].includes('<sup>')){const sup=button.append(new Element());sup.tagName='SUP';}
+   }
+  }
+ }
+ const document=new Element();document.documentElement=new Element();
+ document.getElementById=id=>document.querySelector(`#${id}`);
+ const add=(parent,id,extra={})=>parent.append(new Element({id,...extra}));
+ for(const id of ['collection-grid','search','load-status','result-count','empty-state','load-more','shown-count','reset-search'])add(document,id);
+ const scope=add(document,'collection-scope');
+ for(const value of ['collection','legacy','both']){
+  const button=add(scope,'',{dataset:{scope:value}});button.tagName='BUTTON';
+  const sup=add(button,'');sup.tagName='SUP';
+ }
+ add(document,'scope-help');
+ add(document,'',{className:'filters'});
+ const ratings=add(document,'rating-filters');
+ add(ratings,'goat-help');add(ratings,'rating-summary');add(ratings,'rating-clear');
+ add(ratings,'',{dataset:{rating:'goat'}});
+ const scoreGroup=add(ratings,'',{dataset:{ratingGroup:'score'}});
+ add(scoreGroup,'',{className:'rating-options'});
+ const entries=[
+  {title:'Needle',category:'映画',rating:9},
+  {title:'Current film',category:'映画',rating:8},
+  {title:'Earlier film',category:'映画',rating:9,legacy:true},
+  {title:'Current music',category:'音楽',rating:8},
+  {title:'Earlier music',category:'音楽',rating:9,legacy:true},
+  {title:'Unrated music',category:'音楽',rating:null,legacy:true}
+ ].map((entry,id)=>({...entry,id:String(id),tags:[],label:'TEST'}));
+ vm.runInNewContext(source,{document,ARCHIVE:{entries},window:{}});
+ return document;
+}
+
+function assertScopeDOM(document,counts,help,scope,medium='all',rating=null){
+ assert.deepEqual(document.querySelectorAll('[data-scope]').map(button=>button.querySelector('sup').textContent),counts);
+ assert.equal(document.querySelector('#scope-help').textContent,help);
+ for(const [attribute,selected]of [['scope',scope],['filter',medium],['rating',rating]]){
+  for(const button of document.querySelectorAll(`[data-${attribute}]`)){
+   assert.equal(button.getAttribute('aria-pressed'),String(button.dataset[attribute]===selected),`${attribute} ${button.dataset[attribute]}`);
+   assert.equal(button.classList.contains('active'),button.dataset[attribute]===selected);
+  }
+ }
+}
+
+test('scope, medium and rating clicks refresh counts and help, and public reset restores Collection',()=>{
+ const document=archiveDOM();
+ assertScopeDOM(document,['03','03','06'],'Current records.','collection');
+ // Click the nested count to also exercise delegated closest('[data-scope]').
+ document.querySelector('[data-scope="legacy"]').querySelector('sup').click();
+ assertScopeDOM(document,['03','03','06'],'Earlier records kept in a separate archive.','legacy');
+ document.querySelector('[data-filter="映画"]').click();
+ assertScopeDOM(document,['02','01','03'],'Earlier records kept in a separate archive.','legacy','映画');
+ document.querySelector('[data-rating="score-9"]').click();
+ assertScopeDOM(document,['01','01','02'],'Earlier records kept in a separate archive.','legacy','映画','score-9');
+ document.querySelector('#search').value='Earlier';
+ document.querySelector('#reset-search').click();
+ assert.equal(document.querySelector('#search').value,'');
+ assertScopeDOM(document,['03','03','06'],'Current records.','collection');
+ assert.equal(document.querySelector('#result-count').textContent,'03 OBJECTS / COLLECTION');
+});
+
+test('search input changes results without changing scope or medium facet counts',()=>{
+ const document=archiveDOM();
+ document.querySelector('[data-scope="both"]').click();
+ document.querySelector('[data-filter="映画"]').click();
+ document.querySelector('[data-rating="score-9"]').click();
+ assertScopeDOM(document,['01','01','02'],'All current and legacy records.','both','映画','score-9');
+ const mediumCounts=()=>document.querySelectorAll('[data-filter]').map(button=>button.querySelector('sup').textContent);
+ assert.deepEqual(mediumCounts(),['03','02','01']);
+ assert.equal(document.querySelector('#result-count').textContent,'02 OBJECTS / COLLECTION + LEGACY / FILTERED');
+ const search=document.querySelector('#search');search.value='Needle';search.dispatchEvent({type:'input',bubbles:true});
+ assertScopeDOM(document,['01','01','02'],'All current and legacy records.','both','映画','score-9');
+ assert.deepEqual(mediumCounts(),['03','02','01']);
+ assert.equal(document.querySelector('#result-count').textContent,'01 OBJECT / COLLECTION + LEGACY / FILTERED');
+});
