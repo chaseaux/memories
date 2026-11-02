@@ -260,7 +260,36 @@ def save_json(path, value):
     temporary.replace(path)
 
 
-def sync(client, root=ROOT):
+def refresh_options(event_name, event):
+    """Webhook IDs bypass timestamp caches; scheduled/manual checks read every body."""
+    if event_name != "repository_dispatch":
+        return {"full_refresh": True}
+    payload = event.get("client_payload") or {}
+    if not isinstance(payload, dict):
+        raise RuntimeError("Invalid Notion refresh payload.")
+    # Older deployed Workers send no IDs. Never silently skip those content changes.
+    if not any(key in payload for key in ("page_ids", "source_ids", "full_refresh")):
+        return {"full_refresh": True}
+    full = payload.get("full_refresh", False)
+    if not isinstance(full, bool):
+        raise RuntimeError("Invalid full refresh flag.")
+    def identifiers(key):
+        values = payload.get(key, [])
+        if not isinstance(values, list) or len(values) > 100:
+            raise RuntimeError("Invalid Notion refresh IDs.")
+        normalized = set()
+        for value in values:
+            if not isinstance(value, str) or not re.fullmatch(r"[a-fA-F0-9]{32}|[a-fA-F0-9]{8}(?:-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}", value):
+                raise RuntimeError("Invalid Notion refresh ID.")
+            normalized.add(value.replace("-", "").lower())
+        return normalized
+    pages, sources = identifiers("page_ids"), identifiers("source_ids")
+    return {"full_refresh": full or not (pages or sources), "force_page_ids": pages, "force_source_ids": sources}
+
+
+def sync(client, root=ROOT, *, full_refresh=False, force_page_ids=(), force_source_ids=()):
+    force_page_ids = {uid.replace("-", "").lower() for uid in force_page_ids}
+    force_source_ids = {uid.replace("-", "").lower() for uid in force_source_ids}
     old = read_archive(root / "data.js")
     old_entries = {entry["id"]: entry for entry in old["entries"]}
     state_path = root / ".notion-sync-state.json"
@@ -278,13 +307,14 @@ def sync(client, root=ROOT):
                 previous = old_entries.get(uid)
                 current = page_state(page, source)
                 prior = previous_state.get(uid)
+                force_body = full_refresh or uid in force_page_ids or source_id.replace("-", "").lower() in force_source_ids
                 valid_cover = bool(previous and previous.get("cover") and (root / previous["cover"]).is_file())
-                if previous and previous.get("source") == source and current == prior and (not page.get("cover") or valid_cover):
+                if not force_body and previous and previous.get("source") == source and current == prior and (not page.get("cover") or valid_cover):
                     groups[source].append(previous)
                     next_state[uid] = current
                     reused += 1
                     continue
-                reuse_body = bool(previous and previous.get("source") == source and prior and current["fingerprint"] == prior.get("fingerprint") and current["edited"] == prior.get("edited"))
+                reuse_body = bool(not force_body and previous and previous.get("source") == source and prior and current["fingerprint"] == prior.get("fingerprint") and current["edited"] == prior.get("edited"))
                 body = previous["body"] if reuse_body else body_markdown(client, page["id"])
                 if valid_cover and prior and prior.get("cover") == current["cover"]:
                     cover = previous["cover"]
@@ -307,7 +337,7 @@ def sync(client, root=ROOT):
         images_changed = any(not (root / f.relative_to(staging)).exists() or (root / f.relative_to(staging)).read_bytes() != f.read_bytes() for f in files)
         if rows == old["entries"] and not images_changed:
             save_json(state_path, {"version": 1, "pages": next_state})
-            print(f"No site changes. Retrieved {fetched} changed records; reused {reused} records.")
+            print(f"No site changes. Retrieved {fetched} bodies; reused {reused} records.")
             return False
         now = datetime.now(timezone(timedelta(hours=9)))
         archive = dict(old, entries=rows, snapshotDate=now.strftime("%Y.%m.%d"), snapshotAt=now.isoformat())
@@ -320,7 +350,7 @@ def sync(client, root=ROOT):
         temporary_data.write_text("const ARCHIVE = " + json.dumps(archive, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
         temporary_data.replace(root / "data.js")
         save_json(state_path, {"version": 1, "pages": next_state})
-        print(f"Updated {len(rows)} records. Retrieved {fetched} changed records; reused {reused} records.")
+        print(f"Updated {len(rows)} records. Retrieved {fetched} bodies; reused {reused} records.")
         return True
 
 
@@ -329,6 +359,15 @@ if __name__ == "__main__":
     if not token:
         raise SystemExit("NOTION_TOKEN is missing. Add the read-only Notion connection token to repository Actions secrets.")
     try:
-        sync(Notion(token))
+        event_path = os.environ.get("GITHUB_EVENT_PATH")
+        event = json.loads(Path(event_path).read_text(encoding="utf-8")) if event_path else {}
+        options = refresh_options(os.environ.get("GITHUB_EVENT_NAME", ""), event)
+        if options.get("full_refresh"):
+            print("Sync mode: full body reconciliation.")
+        else:
+            pages = len(options.get("force_page_ids", ()))
+            sources = len(options.get("force_source_ids", ()))
+            print(f"Sync mode: notified entities ({pages} pages, {sources} sources), plus metadata reconciliation.")
+        sync(Notion(token), **options)
     except Exception as exc:
         raise SystemExit(str(exc)) from None

@@ -7,12 +7,13 @@ on:
   repository_dispatch:
     types: [notion_changed]
   schedule:
-    # 04:17 Japan Standard Time. Scheduled runs may start later during GitHub congestion.
-    - cron: '17 19 * * *'
+    # Hourly reconciliation; GitHub may delay scheduled starts.
+    - cron: '17 * * * *'
 
 concurrency:
   group: memories-pages
   cancel-in-progress: false
+  queue: max
 
 jobs:
   publish:
@@ -27,6 +28,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Queued events must start from the latest saved Notion snapshot.
+          ref: main
       - name: Install image build tools
         run: python3 -m pip install --disable-pip-version-check -r requirements-build.txt
       - name: Check sync behavior

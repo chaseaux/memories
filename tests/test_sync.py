@@ -72,6 +72,98 @@ class SyncTests(unittest.TestCase):
         after['last_edited_time'] = '2026-10-02T00:00:00Z'
         self.assertNotEqual(sync.page_state(before, 'movies'), sync.page_state(after, 'movies'))
 
+    def test_webhook_forces_only_affected_body_with_unchanged_timestamp(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'data.js').write_text('const ARCHIVE = {"entries":[]};', encoding='utf-8')
+            client = FakeClient()
+            sync.sync(client, root)
+            uid = page('music', 7)['id']
+            complete = [{"id": "p", "type": "paragraph", "paragraph": {"rich_text": rt("Complete review after further typing")}}]
+            with patch.object(client, 'blocks', return_value=complete) as blocks:
+                self.assertTrue(sync.sync(client, root, force_page_ids={uid}))
+                self.assertEqual([call.args[0] for call in blocks.call_args_list], [uid])
+            entries = sync.read_archive(root / 'data.js')['entries']
+            self.assertEqual(next(e['body'] for e in entries if e['id'] == uid), 'Complete review after further typing')
+
+    def test_hourly_refresh_repairs_missed_body_changes_without_metadata_changes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'data.js').write_text('const ARCHIVE = {"entries":[]};', encoding='utf-8')
+            client = FakeClient()
+            sync.sync(client, root)
+            complete = [{"id": "p", "type": "paragraph", "paragraph": {"rich_text": rt("Complete review")}}]
+            with patch.object(client, 'blocks', return_value=complete) as blocks:
+                self.assertTrue(sync.sync(client, root, full_refresh=True))
+                self.assertEqual(blocks.call_count, len(sync.SOURCES) - 1)
+            self.assertTrue(all(e['body'] == 'Complete review' for e in sync.read_archive(root / 'data.js')['entries']))
+            original = (root / 'data.js').read_bytes()
+            with patch.object(client, 'blocks', return_value=complete) as blocks:
+                self.assertFalse(sync.sync(client, root, full_refresh=True))
+                self.assertEqual(blocks.call_count, len(sync.SOURCES) - 1)
+            self.assertEqual((root / 'data.js').read_bytes(), original)
+
+    def test_source_webhook_forces_bodies_only_in_affected_collection(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'data.js').write_text('const ARCHIVE = {"entries":[]};', encoding='utf-8')
+            client = FakeClient()
+            sync.sync(client, root)
+            with patch.object(client, 'blocks', wraps=client.blocks) as blocks:
+                self.assertFalse(sync.sync(client, root, force_source_ids={sync.SOURCES['music']}))
+                self.assertEqual([call.args[0] for call in blocks.call_args_list], [page('music', 7)['id']])
+
+    def test_full_body_checks_do_not_download_unchanged_images(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'data.js').write_text('const ARCHIVE = {"entries":[]};', encoding='utf-8')
+            client = FakeClient()
+            original_query = client.query
+            def query(uid):
+                rows = original_query(uid)
+                for row in rows:
+                    row['cover'] = {'type':'external','external':{'url':'https://example.com/cover.jpg'}}
+                return rows
+            def cover(row, staging, previous, root):
+                relative = 'assets/covers/' + row['id'] + '.jpg'
+                path = staging / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'existing artwork')
+                return relative
+            with patch.object(client, 'query', side_effect=query), patch.object(sync, 'cover_image', side_effect=cover):
+                sync.sync(client, root)
+            with patch.object(client, 'query', side_effect=query), patch.object(sync, 'cover_image', side_effect=AssertionError('Unchanged image downloaded')):
+                self.assertFalse(sync.sync(client, root, full_refresh=True))
+
+    def test_failed_full_refresh_preserves_snapshot_and_sync_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'data.js').write_text('const ARCHIVE = {"entries":[]};', encoding='utf-8')
+            client = FakeClient()
+            sync.sync(client, root)
+            before = {name:(root / name).read_bytes() for name in ('data.js','.notion-sync-state.json')}
+            with patch.object(client, 'blocks', side_effect=[client.blocks('page'), RuntimeError('Temporary read failure')]):
+                with self.assertRaises(RuntimeError):
+                    sync.sync(client, root, full_refresh=True)
+            self.assertEqual({name:(root / name).read_bytes() for name in before}, before)
+
+    def test_event_refresh_plan_preserves_target_ids_and_supports_legacy_workers(self):
+        uid = '4080a8e7-f46e-81c0-b032-f82684d90083'
+        plan = sync.refresh_options('repository_dispatch', {'client_payload':{'page_ids':[uid]}})
+        self.assertFalse(plan['full_refresh'])
+        self.assertEqual(plan['force_page_ids'], {uid.replace('-','')})
+        for name, event in [('schedule',{}),('workflow_dispatch',{}),('',{}),('repository_dispatch',{})]:
+            self.assertTrue(sync.refresh_options(name,event)['full_refresh'])
+        self.assertTrue(sync.refresh_options('repository_dispatch', {'client_payload':{'full_refresh':True}})['full_refresh'])
+        plan = sync.refresh_options('repository_dispatch', {'client_payload':{'source_ids':[sync.SOURCES['music']]}})
+        self.assertEqual(plan['force_source_ids'], {sync.SOURCES['music'].replace('-','')})
+        self.assertFalse(plan['full_refresh'])
+
+    def test_refresh_plan_rejects_invalid_ids_and_non_boolean_modes(self):
+        for payload in ({'page_ids':'not-a-list'}, {'page_ids':['../../private']}, {'page_ids':[42]}, {'full_refresh':'false'}, {'source_ids':['bad']}):
+            with self.subTest(payload=payload), self.assertRaises(RuntimeError):
+                sync.refresh_options('repository_dispatch', {'client_payload':payload})
+
     def test_zero_and_empty_scores(self):
         entry = sync.normalize(page("music", 1), "music", "## 感想\nNew note", None)
         self.assertEqual(entry["ratingLabel"], "0 / 10")

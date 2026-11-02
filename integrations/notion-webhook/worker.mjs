@@ -21,7 +21,7 @@ export default {
         }
       } catch { storage = false; }
       const checks = {storage,setupKey:Boolean(env.SETUP_KEY),githubToken:Boolean(env.GITHUB_TOKEN),repository:Boolean(env.GITHUB_REPOSITORY),workspace:Boolean(env.NOTION_WORKSPACE_ID),verification};
-      return Response.json({ready:Object.values(checks).every(Boolean),checks,lastEvent:last},{headers:{'Cache-Control':'no-store'}});
+      return Response.json({syncProtocol:2,ready:Object.values(checks).every(Boolean),checks,lastEvent:last},{headers:{'Cache-Control':'no-store'}});
     }
     if (url.pathname === '/setup' && request.method === 'GET') {
       if (!env.SETUP_KEY || request.headers.get('Authorization') !== `Bearer ${env.SETUP_KEY}`) return new Response('Unauthorized',{status:401});
@@ -54,11 +54,18 @@ export default {
     if (!allowed.test(event.type || '')) return new Response('Ignored',{status:202});
     if (!/^[a-f0-9-]{36}$/i.test(event.id || '')) return new Response('Invalid event',{status:400});
     if (await env.NOTION_EVENTS.get(`event:${event.id}`)) return new Response('Already accepted',{status:202});
-    // Every run reconciles metadata across all seven DBs. Coalesced GitHub runs
-    // cannot lose a changed work, including deletions and moves between DBs.
+    // Forward the affected entity so same-minute edits bypass the body cache.
+    // Unknown event shapes fall back to a full check rather than losing content.
+    const entity = event.entity;
+    const validEntity = entity && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(entity.id || '');
+    const refresh = validEntity && event.type.startsWith('page.') && entity.type === 'page'
+      ? {page_ids:[entity.id]}
+      : validEntity && event.type.startsWith('data_source.') && entity.type === 'data_source'
+        ? {source_ids:[entity.id]}
+        : {full_refresh:true};
     const result = await fetch(`https://api.github.com/repos/${env.GITHUB_REPOSITORY}/dispatches`,{
       method:'POST',headers:{Authorization:`Bearer ${env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json','User-Agent':'memories-notion-webhook','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},
-      body:JSON.stringify({event_type:'notion_changed'})
+      body:JSON.stringify({event_type:'notion_changed',client_payload:{...refresh,event_id:event.id,event_type:event.type}})
     });
     if (!result.ok) { await diagnostic('dispatch_failed',result.status); return new Response('Dispatch failed; retry later',{status:503}); }
     await env.NOTION_EVENTS.put(`event:${event.id}`,'accepted',{expirationTtl:86400});
