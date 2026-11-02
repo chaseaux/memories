@@ -147,6 +147,7 @@ function archiveDOM(entryData){
  const floating=fs.readFileSync(path.join(__dirname,'../floating.js'),'utf8');
  vm.runInContext(floating.slice(floating.indexOf(' const menuResult='),floating.indexOf(" document.querySelector('#search').addEventListener('keydown'")),local);
  document.refreshMenu=()=>vm.runInContext('updateResults()',local);
+ document.showAllRecords=()=>vm.runInContext('displayLimit=entries.length;render()',local);
  return document;
 }
 
@@ -194,55 +195,96 @@ test('search input changes results without changing scope or medium facet counts
 });
 
 function archiveSnapshot(){
- return vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../data.js'),'utf8')+';ARCHIVE.entries');
+ const entries=vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../data.js'),'utf8')+';ARCHIVE.entries');
+ assert(entries.some(e=>typeof e.rating!=='number'&&e.legacy!==true),'snapshot needs an unrated Collection entry');
+ assert(entries.some(e=>typeof e.rating==='number'&&e.legacy!==true),'snapshot needs a rated Collection entry');
+ return entries;
 }
 function visibleIds(document){
  return [...document.querySelector('#collection-grid').innerHTML.matchAll(/data-entry="([^"]+)"/g)].map(match=>match[1]);
 }
 
+// Independent expectations use only snapshot fields, never production predicates.
+const countText=count=>String(count).padStart(2,'0');
+const resultText=(count,scope='collection',filtered=false)=>`${countText(count)} ${count===1?'OBJECT':'OBJECTS'} / ${scope==='both'?'COLLECTION + LEGACY':scope.toUpperCase()}${filtered?' / FILTERED':''}`;
+const menuText=count=>`${count} ${count===1?'object':'objects'}`;
+function snapshotSelection(entries,{unrated=false,scope='collection',medium='all'}={}){
+ return Array.from(entries).filter(e=>(typeof e.rating!=='number')===unrated)
+  .filter(e=>scope==='both'||(scope==='legacy'?e.legacy===true:e.legacy!==true))
+  .filter(e=>medium==='all'||e.category===medium);
+}
+function assertSnapshotFacets(document,entries,options={}){
+ for(const button of document.querySelectorAll('[data-scope]')){
+  const expected=snapshotSelection(entries,{...options,scope:button.dataset.scope}).length;
+  assert.equal(button.querySelector('sup').textContent,countText(expected),`scope ${button.dataset.scope}`);
+ }
+ for(const button of document.querySelectorAll('[data-filter]')){
+  const expected=snapshotSelection(entries,{...options,medium:button.dataset.filter}).length;
+  assert.equal(button.querySelector('sup').textContent,countText(expected),`medium ${button.dataset.filter}`);
+ }
+}
+function assertSnapshotList(document,expected){
+ document.showAllRecords();
+ assert.deepEqual(visibleIds(document).sort(),Array.from(expected,e=>e.id).sort());
+}
+
 test('default Collection hides unrated entries from the list and all facet counts',()=>{
- const entries=archiveSnapshot(),document=archiveDOM(entries),unrated=entries.filter(e=>typeof e.rating!=='number');
- assert.equal(unrated.length,5);
- assert.equal(document.querySelector('#result-count').textContent,'97 OBJECTS / COLLECTION');
+ const entries=archiveSnapshot(),document=archiveDOM(entries);
+ assert.equal(document.querySelector('#result-count').textContent,resultText(snapshotSelection(entries).length));
  assert.equal(document.querySelector('#rating-summary').textContent,'Rated');
  assert.match(fs.readFileSync(path.join(__dirname,'../index.html'),'utf8'),/id="rating-summary">Rated</);
  for(const scope of ['collection','legacy','both']){
   document.querySelector(`[data-scope="${scope}"]`).click();
-  for(const button of document.querySelectorAll('[data-filter]')){
-   const expected=entries.filter(e=>typeof e.rating==='number'&&(scope==='both'||(e.legacy===true)===(scope==='legacy'))&&(button.dataset.filter==='all'||button.dataset.filter===e.category)).length;
-   assert.equal(Number(button.querySelector('sup').textContent),expected);
-  }
-  assert(visibleIds(document).every(id=>!unrated.some(e=>e.id===id)));
+  assertSnapshotFacets(document,entries,{scope});
+  const expected=snapshotSelection(entries,{scope});
+  assert.equal(document.querySelector('#result-count').textContent,resultText(expected.length,scope));
+  assertSnapshotList(document,expected);
  }
 });
 
 test('Unrated selection reveals unrated records and clear rating or reset restores Rated',()=>{
- const document=archiveDOM(archiveSnapshot()),button=document.querySelector('[data-rating="unrated"]');
+ const entries=archiveSnapshot(),document=archiveDOM(entries),button=document.querySelector('[data-rating="unrated"]');
+ const unrated=snapshotSelection(entries,{unrated:true}),rated=snapshotSelection(entries);
+ assert(unrated.length>0,'Unrated oracle must contain Collection records');
  button.click();
  assert.equal(document.querySelector('#rating-summary').textContent,'Unrated');
- assert.equal(document.querySelector('#result-count').textContent,'05 OBJECTS / COLLECTION / FILTERED');
- assert.deepEqual(visibleIds(document).sort(),Array.from(archiveSnapshot().filter(e=>typeof e.rating!=='number'),e=>e.id).sort());
- assert.deepEqual(document.querySelectorAll('[data-scope]').map(b=>b.querySelector('sup').textContent),['05','00','05']);
- for(const medium of document.querySelectorAll('[data-filter]'))assert.equal(medium.querySelector('sup').textContent,['all','音楽'].includes(medium.dataset.filter)?'05':'00');
+ assert.equal(document.querySelector('#result-count').textContent,resultText(unrated.length,'collection',true));
+ assertSnapshotList(document,unrated);
+ assertSnapshotFacets(document,entries,{unrated:true});
  for(const clear of ['#rating-clear','#reset-search']){
   document.querySelector(clear).click();
   assert.equal(document.querySelector('#rating-summary').textContent,'Rated');
-  assert.equal(document.querySelector('#result-count').textContent,'97 OBJECTS / COLLECTION');
+  assert.equal(document.querySelector('#result-count').textContent,resultText(rated.length));
+  assertSnapshotFacets(document,entries);
+  assertSnapshotList(document,rated);
   button.click();
  }
  button.click();
- assert.equal(document.querySelector('#result-count').textContent,'97 OBJECTS / COLLECTION');
+ assert.equal(document.querySelector('#result-count').textContent,resultText(rated.length));
+ assertSnapshotFacets(document,entries);
+ assertSnapshotList(document,rated);
 });
 
 test('search for an unrated title requires the Unrated filter',()=>{
- const entries=archiveSnapshot(),document=archiveDOM(entries),unrated=entries.find(e=>typeof e.rating!=='number');
+ const entries=archiveSnapshot(),document=archiveDOM(entries),unrated=snapshotSelection(entries,{unrated:true})[0];
+ assert(unrated&&unrated.title.trim(),'search needs a non-empty unrated Collection title');
+ const normalize=value=>value.normalize('NFKC').toLocaleLowerCase('ja');
+ const query=normalize(unrated.title.trim());
+ // A future rated record may mention the same title; count those matches too.
+ const matchesTitle=e=>normalize([e.title,e.originalTitle,e.creator,e.category,e.label,e.note,...e.tags].join(' ')).includes(query);
+ const ratedMatches=snapshotSelection(entries).filter(matchesTitle),unratedMatches=snapshotSelection(entries,{unrated:true}).filter(matchesTitle);
+ assert(unratedMatches.length>0,'search oracle must match the unrated title');
  const search=document.querySelector('#search');search.value=unrated.title;search.dispatchEvent({type:'input',bubbles:true});
- assert.equal(document.querySelector('#result-count').textContent,'00 OBJECTS / COLLECTION / FILTERED');
- assert.deepEqual(visibleIds(document),[]);
+ assert.equal(document.querySelector('#result-count').textContent,resultText(ratedMatches.length,'collection',true));
+ assertSnapshotList(document,ratedMatches);
+ assert(!visibleIds(document).includes(unrated.id));
  document.querySelector('[data-rating="unrated"]').click();
+ assert.equal(document.querySelector('#result-count').textContent,resultText(unratedMatches.length,'collection',true));
+ assertSnapshotList(document,unratedMatches);
  assert(visibleIds(document).includes(unrated.id));
  document.querySelector('#rating-clear').click();
- assert.equal(document.querySelector('#result-count').textContent,'00 OBJECTS / COLLECTION / FILTERED');
+ assert.equal(document.querySelector('#result-count').textContent,resultText(ratedMatches.length,'collection',true));
+ assertSnapshotList(document,ratedMatches);
 });
 
 test('hero stage pool excludes unrated entries while retaining numeric zero and legacy covers',()=>{
@@ -257,16 +299,21 @@ test('hero stage pool excludes unrated entries while retaining numeric zero and 
 });
 
 test('menu result count and Clear filters share the rated default',()=>{
- const document=archiveDOM(archiveSnapshot());
- assert.equal(document.querySelector('#menu-result').textContent,'97 objects');
- assert.match(document.querySelector('#view-results').innerHTML,/View 97 objects/);
+ const entries=archiveSnapshot(),document=archiveDOM(entries);
+ const rated=snapshotSelection(entries),unrated=snapshotSelection(entries,{unrated:true});
+ assert.equal(document.querySelector('#menu-result').textContent,menuText(rated.length));
+ assert(document.querySelector('#view-results').innerHTML.includes(`View ${menuText(rated.length)}`));
  document.querySelector('[data-rating="unrated"]').click();document.refreshMenu();
- assert.equal(document.querySelector('#menu-result').textContent,'5 objects');
+ assert.equal(document.querySelector('#menu-result').textContent,menuText(unrated.length));
+ assert(document.querySelector('#view-results').innerHTML.includes(`View ${menuText(unrated.length)}`));
  document.querySelector('#search').value='no such unrated title';
  document.querySelector('#menu-reset').click();document.refreshMenu();
  assert.equal(document.querySelector('#search').value,'');
  assert.equal(document.querySelector('#rating-summary').textContent,'Rated');
- assert.equal(document.querySelector('#result-count').textContent,'97 OBJECTS / COLLECTION');
- assert.equal(document.querySelector('#menu-result').textContent,'97 objects');
+ assert.equal(document.querySelector('#result-count').textContent,resultText(rated.length));
+ assert.equal(document.querySelector('#menu-result').textContent,menuText(rated.length));
+ assert(document.querySelector('#view-results').innerHTML.includes(`View ${menuText(rated.length)}`));
+ assertSnapshotFacets(document,entries);
+ assertSnapshotList(document,rated);
  assert.equal(document.querySelector('#menu-reset').hidden,true);
 });
